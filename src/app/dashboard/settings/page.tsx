@@ -52,11 +52,28 @@ export default function SettingsPage() {
     weeklyReports: false,
   });
 
+  const [appearanceSettings, setAppearanceSettings] = useState({
+    theme: "light",
+    language: "en",
+    timezone: "UTC-5",
+  });
+
   useEffect(() => {
     if (session) {
+      // Initialize profile data from session
+      setProfileData({
+        name: session.user?.name || "",
+        email: session.user?.email || "",
+        role: "User",
+        avatar: session.user?.image || "/api/placeholder/96/96",
+        phone: "",
+        location: "",
+        bio: "",
+      });
       fetchUserData();
       fetchNotificationSettings();
       fetchCompanyData();
+      fetchAppearanceSettings();
     }
   }, [session]);
 
@@ -65,10 +82,11 @@ export default function SettingsPage() {
       const response = await fetch("/api/user/profile");
       if (response.ok) {
         const data = await response.json();
-        setProfileData(data);
+        setProfileData((prev) => ({ ...prev, ...data }));
       }
     } catch (error) {
-      toast.error("Error loading profile data");
+      console.error("Error loading profile data:", error);
+      // Don't show error toast, just use session data
     } finally {
       setLoading(false);
     }
@@ -82,7 +100,8 @@ export default function SettingsPage() {
         setNotificationSettings(data);
       }
     } catch (error) {
-      toast.error("Error loading notification settings");
+      console.error("Error loading notification settings:", error);
+      // Keep default settings
     }
   };
 
@@ -96,8 +115,37 @@ export default function SettingsPage() {
         }
       }
     } catch (error) {
-      toast.error("Error loading company data");
+      console.error("Error loading company data:", error);
+      // Keep default/empty company data
     }
+  };
+
+  const fetchAppearanceSettings = async () => {
+    try {
+      const settings = localStorage.getItem('appearanceSettings');
+      if (settings) {
+        setAppearanceSettings(JSON.parse(settings));
+      }
+    } catch (error) {
+      console.error("Error loading appearance settings:", error);
+    }
+  };
+
+  const handleAppearanceChange = (key: string, value: string) => {
+    const newSettings = { ...appearanceSettings, [key]: value };
+    setAppearanceSettings(newSettings);
+    localStorage.setItem('appearanceSettings', JSON.stringify(newSettings));
+    
+    // Apply theme immediately
+    if (key === 'theme') {
+      if (value === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+    
+    toast.success(`${key.charAt(0).toUpperCase() + key.slice(1)} updated successfully`);
   };
 
   const tabs = [
@@ -161,7 +209,7 @@ export default function SettingsPage() {
       ...notificationSettings,
       [key]: !notificationSettings[key as keyof typeof notificationSettings],
     };
-    
+
     setNotificationSettings(newSettings);
 
     try {
@@ -174,12 +222,12 @@ export default function SettingsPage() {
       if (!response.ok) {
         // Revert on error
         setNotificationSettings(notificationSettings);
-        toast.error("Failed to update notification settings");
+        console.error("Failed to update notification settings");
       }
     } catch (error) {
-      // Revert on error
+      // Revert on error  
       setNotificationSettings(notificationSettings);
-      toast.error("Error updating notification settings");
+      console.error("Error updating notification settings:", error);
     }
   };
 
@@ -222,7 +270,7 @@ export default function SettingsPage() {
 
       {/* Profile Settings */}
       {activeTab === "profile" && (
-        <Card>
+        <Card className="border-0 shadow-sm bg-white">
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               <span>Profile Information</span>
@@ -244,7 +292,11 @@ export default function SettingsPage() {
                   >
                     Cancel
                   </Button>
-                  <Button onClick={handleProfileUpdate} size="sm" disabled={saving}>
+                  <Button
+                    onClick={handleProfileUpdate}
+                    size="sm"
+                    disabled={saving}
+                  >
                     <Save className="h-4 w-4 mr-2" />
                     {saving ? "Saving..." : "Save"}
                   </Button>
@@ -257,22 +309,29 @@ export default function SettingsPage() {
               {/* Avatar Section */}
               <div className="flex items-center space-x-6">
                 <div className="relative">
-                  <img
-                    src={profileData.avatar}
-                    alt={profileData.name}
-                    className="w-24 h-24 rounded-full object-cover"
-                  />
+                  {profileData.avatar && profileData.avatar !== "/api/placeholder/96/96" ? (
+                    <img
+                      src={profileData.avatar}
+                      alt={profileData.name}
+                      className="w-24 h-24 rounded-full object-cover border-4 border-gray-100"
+                    />
+                  ) : (
+                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-2xl font-bold border-4 border-gray-100">
+                      {profileData.name ? profileData.name.charAt(0).toUpperCase() : 'U'}
+                    </div>
+                  )}
                   {isEditing && (
-                    <button className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700">
+                    <button className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 shadow-lg">
                       <Camera className="h-4 w-4" />
                     </button>
                   )}
                 </div>
                 <div>
                   <h3 className="text-lg font-medium text-gray-900">
-                    {profileData.name}
+                    {profileData.name || "User"}
                   </h3>
                   <p className="text-gray-500">{profileData.role}</p>
+                  <p className="text-sm text-gray-400">{profileData.email}</p>
                 </div>
               </div>
 
@@ -289,7 +348,7 @@ export default function SettingsPage() {
                       setProfileData({ ...profileData, name: e.target.value })
                     }
                     disabled={!isEditing}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50"
                   />
                 </div>
 
@@ -304,7 +363,7 @@ export default function SettingsPage() {
                       setProfileData({ ...profileData, email: e.target.value })
                     }
                     disabled={!isEditing}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50"
                   />
                 </div>
 
@@ -319,7 +378,7 @@ export default function SettingsPage() {
                       setProfileData({ ...profileData, phone: e.target.value })
                     }
                     disabled={!isEditing}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50"
                   />
                 </div>
 
@@ -337,7 +396,7 @@ export default function SettingsPage() {
                       })
                     }
                     disabled={!isEditing}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50"
                   />
                 </div>
 
@@ -352,7 +411,7 @@ export default function SettingsPage() {
                     }
                     disabled={!isEditing}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50"
                   />
                 </div>
               </div>
@@ -363,7 +422,7 @@ export default function SettingsPage() {
 
       {/* Company Settings */}
       {activeTab === "company" && (
-        <Card>
+        <Card className="border-0 shadow-sm bg-white">
           <CardHeader>
             <CardTitle>Company Information</CardTitle>
           </CardHeader>
@@ -379,7 +438,7 @@ export default function SettingsPage() {
                   onChange={(e) =>
                     setCompanyData({ ...companyData, name: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
@@ -393,7 +452,7 @@ export default function SettingsPage() {
                   onChange={(e) =>
                     setCompanyData({ ...companyData, industry: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
@@ -407,7 +466,7 @@ export default function SettingsPage() {
                   onChange={(e) =>
                     setCompanyData({ ...companyData, website: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
@@ -420,7 +479,7 @@ export default function SettingsPage() {
                   onChange={(e) =>
                     setCompanyData({ ...companyData, size: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="1-10 employees">1-10 employees</option>
                   <option value="11-25 employees">11-25 employees</option>
@@ -442,7 +501,7 @@ export default function SettingsPage() {
                     })
                   }
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
             </div>
@@ -459,7 +518,7 @@ export default function SettingsPage() {
 
       {/* Notification Settings */}
       {activeTab === "notifications" && (
-        <Card>
+        <Card className="border-0 shadow-sm bg-white">
           <CardHeader>
             <CardTitle>Notification Preferences</CardTitle>
           </CardHeader>
@@ -591,7 +650,7 @@ export default function SettingsPage() {
 
       {/* Security Settings */}
       {activeTab === "security" && (
-        <Card>
+        <Card className="border-0 shadow-sm bg-white">
           <CardHeader>
             <CardTitle>Security Settings</CardTitle>
           </CardHeader>
@@ -625,7 +684,7 @@ export default function SettingsPage() {
 
       {/* Appearance Settings */}
       {activeTab === "appearance" && (
-        <Card>
+        <Card className="border-0 shadow-sm bg-white">
           <CardHeader>
             <CardTitle>Appearance Settings</CardTitle>
           </CardHeader>
@@ -635,19 +694,36 @@ export default function SettingsPage() {
                 <h4 className="font-medium text-gray-900 mb-4">Theme</h4>
                 <div className="flex space-x-4">
                   <Button
+                    onClick={() => handleAppearanceChange('theme', 'light')}
                     variant="outline"
-                    className="bg-blue-50 border-blue-200"
+                    className={appearanceSettings.theme === 'light' ? "bg-blue-50 border-blue-200" : ""}
                   >
                     Light
                   </Button>
-                  <Button variant="outline">Dark</Button>
-                  <Button variant="outline">System</Button>
+                  <Button 
+                    onClick={() => handleAppearanceChange('theme', 'dark')}
+                    variant="outline"
+                    className={appearanceSettings.theme === 'dark' ? "bg-blue-50 border-blue-200" : ""}
+                  >
+                    Dark
+                  </Button>
+                  <Button 
+                    onClick={() => handleAppearanceChange('theme', 'system')}
+                    variant="outline"
+                    className={appearanceSettings.theme === 'system' ? "bg-blue-50 border-blue-200" : ""}
+                  >
+                    System
+                  </Button>
                 </div>
               </div>
 
               <div>
                 <h4 className="font-medium text-gray-900 mb-4">Language</h4>
-                <select className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select 
+                  value={appearanceSettings.language}
+                  onChange={(e) => handleAppearanceChange('language', e.target.value)}
+                  className="px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
                   <option value="en">English</option>
                   <option value="es">Spanish</option>
                   <option value="fr">French</option>
@@ -657,7 +733,11 @@ export default function SettingsPage() {
 
               <div>
                 <h4 className="font-medium text-gray-900 mb-4">Time Zone</h4>
-                <select className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <select 
+                  value={appearanceSettings.timezone}
+                  onChange={(e) => handleAppearanceChange('timezone', e.target.value)}
+                  className="px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
                   <option value="UTC-5">Eastern Time (UTC-5)</option>
                   <option value="UTC-6">Central Time (UTC-6)</option>
                   <option value="UTC-7">Mountain Time (UTC-7)</option>

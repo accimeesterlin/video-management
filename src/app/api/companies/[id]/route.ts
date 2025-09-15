@@ -7,7 +7,7 @@ import Company from "@/models/Company";
 // GET - Fetch a specific company
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -18,7 +18,9 @@ export async function GET(
 
     await dbConnect();
 
-    const company = await Company.findById(params.id).populate(
+    const { id } = await params;
+
+    const company = await Company.findById(id).populate(
       "members.userId",
       "name email"
     );
@@ -32,7 +34,8 @@ export async function GET(
 
     // Check if user is a member of this company
     const isMember = company.members.some(
-      (member: any) => member.userId._id.toString() === session.user.id
+      (member: { userId: { _id: { toString: () => string } } }) =>
+        member.userId._id.toString() === session.user?.email
     );
 
     if (!isMember) {
@@ -52,7 +55,7 @@ export async function GET(
 // PUT - Update a company
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -61,12 +64,23 @@ export async function PUT(
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    const { name, description, website, industry, size, location } =
-      await request.json();
+    const {
+      name,
+      description,
+      website,
+      industry,
+      size,
+      location,
+      founded,
+      address,
+      phone,
+    } = await request.json();
 
     await dbConnect();
 
-    const company = await Company.findById(params.id);
+    const { id } = await params;
+
+    const company = await Company.findById(id);
 
     if (!company) {
       return NextResponse.json(
@@ -77,7 +91,8 @@ export async function PUT(
 
     // Check if user is the owner or admin
     const userMember = company.members.find(
-      (member: any) => member.userId.toString() === session.user.id
+      (member: { userId: { toString: () => string }; role: string }) =>
+        member.userId.toString() === session.user?.email
     );
 
     if (!userMember || !["OWNER", "ADMIN"].includes(userMember.role)) {
@@ -85,7 +100,7 @@ export async function PUT(
     }
 
     const updatedCompany = await Company.findByIdAndUpdate(
-      params.id,
+      id,
       {
         name,
         description,
@@ -93,6 +108,9 @@ export async function PUT(
         industry,
         size,
         location,
+        founded,
+        address,
+        phone,
         updatedAt: new Date(),
       },
       { new: true }
@@ -111,7 +129,7 @@ export async function PUT(
 // DELETE - Delete a company
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -122,7 +140,9 @@ export async function DELETE(
 
     await dbConnect();
 
-    const company = await Company.findById(params.id);
+    const { id } = await params;
+
+    const company = await Company.findById(id);
 
     if (!company) {
       return NextResponse.json(
@@ -133,7 +153,8 @@ export async function DELETE(
 
     // Check if user is the owner
     const userMember = company.members.find(
-      (member: any) => member.userId.toString() === session.user.id
+      (member: { userId: { toString: () => string }; role: string }) =>
+        member.userId.toString() === session.user?.email
     );
 
     if (!userMember || userMember.role !== "OWNER") {
@@ -143,7 +164,7 @@ export async function DELETE(
       );
     }
 
-    await Company.findByIdAndDelete(params.id);
+    await Company.findByIdAndDelete(id);
 
     return NextResponse.json({ message: "Company deleted successfully" });
   } catch (error) {

@@ -23,7 +23,7 @@ export default function DashboardPage() {
       <div className="text-center">
         <div className="inline-flex items-center space-x-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-sm font-medium mb-4">
           <Sparkles className="h-4 w-4" />
-          <span>Welcome to Video Editor Pro</span>
+          <span>Welcome to Video Management Platform</span>
         </div>
         <h1 className="text-4xl font-bold text-gray-900 mb-4">
           Welcome back, {session?.user?.name || "User"}! 👋
@@ -49,12 +49,12 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-600 mb-4">
               Manage your companies and teams
             </p>
-            <Button asChild className="w-full btn-primary">
-              <Link href="/dashboard/companies">
+            <Link href="/dashboard/companies">
+              <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-3 rounded-lg shadow-sm transition-all duration-200">
                 <Building2 className="h-4 w-4 mr-2" />
                 Manage Companies
-              </Link>
-            </Button>
+              </Button>
+            </Link>
           </CardContent>
         </Card>
 
@@ -71,12 +71,12 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-600 mb-4">
               Create and manage video projects
             </p>
-            <Button asChild className="w-full btn-primary">
-              <Link href="/dashboard/projects">
+            <Link href="/dashboard/projects">
+              <Button className="w-full bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-3 rounded-lg shadow-sm transition-all duration-200">
                 <ClipboardList className="h-4 w-4 mr-2" />
                 Manage Projects
-              </Link>
-            </Button>
+              </Button>
+            </Link>
           </CardContent>
         </Card>
 
@@ -91,12 +91,12 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-600 mb-4">
               Upload and organize video content
             </p>
-            <Button asChild className="w-full btn-primary">
-              <Link href="/dashboard/videos">
+            <Link href="/dashboard/videos">
+              <Button className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium px-4 py-3 rounded-lg shadow-sm transition-all duration-200">
                 <Video className="h-4 w-4 mr-2" />
                 Manage Videos
-              </Link>
-            </Button>
+              </Button>
+            </Link>
           </CardContent>
         </Card>
 
@@ -111,12 +111,12 @@ export default function DashboardPage() {
             <p className="text-sm text-gray-600 mb-4">
               Manage team members and roles
             </p>
-            <Button asChild className="w-full btn-primary">
-              <Link href="/dashboard/team">
+            <Link href="/dashboard/team">
+              <Button className="w-full bg-orange-600 hover:bg-orange-700 text-white font-medium px-4 py-3 rounded-lg shadow-sm transition-all duration-200">
                 <Users className="h-4 w-4 mr-2" />
                 Manage Team
-              </Link>
-            </Button>
+              </Button>
+            </Link>
           </CardContent>
         </Card>
       </div>
@@ -143,12 +143,15 @@ export default function DashboardPage() {
                   Start by creating a company to organize your team and
                   projects.
                 </p>
-                <Button asChild size="sm" className="btn-primary">
-                  <Link href="/dashboard/companies">
+                <Link href="/dashboard/companies">
+                  <Button
+                    size="sm"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg shadow-sm transition-all duration-200"
+                  >
                     <Plus className="h-4 w-4 mr-2" />
                     Create Company
-                  </Link>
-                </Button>
+                  </Button>
+                </Link>
               </div>
             </div>
 
@@ -163,12 +166,15 @@ export default function DashboardPage() {
                 <p className="text-sm text-gray-600 mb-3">
                   Add team members to collaborate on your video projects.
                 </p>
-                <Button asChild size="sm" className="btn-primary">
-                  <Link href="/dashboard/team">
+                <Link href="/dashboard/team">
+                  <Button
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-lg shadow-sm transition-all duration-200"
+                  >
                     <Users className="h-4 w-4 mr-2" />
                     Invite Members
-                  </Link>
-                </Button>
+                  </Button>
+                </Link>
               </div>
             </div>
 
@@ -183,12 +189,15 @@ export default function DashboardPage() {
                 <p className="text-sm text-gray-600 mb-3">
                   Create a project and start uploading videos for editing.
                 </p>
-                <Button asChild size="sm" className="btn-primary">
-                  <Link href="/dashboard/projects">
+                <Link href="/dashboard/projects">
+                  <Button
+                    size="sm"
+                    className="bg-purple-600 hover:bg-purple-700 text-white font-medium px-4 py-2 rounded-lg shadow-sm transition-all duration-200"
+                  >
                     <ClipboardList className="h-4 w-4 mr-2" />
                     Create Project
-                  </Link>
-                </Button>
+                  </Button>
+                </Link>
               </div>
             </div>
           </div>
@@ -213,9 +222,11 @@ export default function DashboardPage() {
               Your recent activity will appear here once you start using the
               platform.
             </p>
-            <Button asChild className="btn-primary">
-              <Link href="/dashboard/companies">Get Started</Link>
-            </Button>
+            <Link href="/dashboard/companies">
+              <Button className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-3 rounded-lg shadow-sm transition-all duration-200">
+                Get Started
+              </Button>
+            </Link>
           </div>
         </CardContent>
       </Card>

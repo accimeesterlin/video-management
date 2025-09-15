@@ -108,6 +108,11 @@
     @apply bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto;
   }
 
+  /* Ensure consistent background colors */
+  .header-consistent {
+    @apply bg-white;
+  }
+
   /* Gradient backgrounds */
   .gradient-primary {
     @apply bg-gradient-to-br from-blue-500 to-blue-600;

@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       "video/x-flv",
       "video/webm",
     ];
-    
+
     if (!allowedTypes.includes(contentType)) {
       return NextResponse.json(
         { error: "Invalid file type. Only video files are allowed." },
@@ -39,9 +39,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const userId = session.user.id || session.user.email;
+    const userId = session.user?.email;
     const videoKey = generateVideoKey(userId, filename);
-    
+
     // Generate presigned URL with 1 hour expiration
     const uploadUrl = await generatePresignedUrl(videoKey, contentType, 3600);
 

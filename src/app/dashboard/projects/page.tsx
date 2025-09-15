@@ -16,6 +16,9 @@ import {
   XCircle,
   X,
   Save,
+  Trash2,
+  Edit,
+  Eye,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
@@ -45,6 +48,7 @@ export default function ProjectsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -61,9 +65,13 @@ export default function ProjectsPage() {
 
   const fetchProjects = async () => {
     try {
-      // For now, we'll use empty array
-      // In real app, this would fetch from API
-      setProjects([]);
+      const response = await fetch("/api/projects");
+      if (response.ok) {
+        const data = await response.json();
+        setProjects(data);
+      } else {
+        toast.error("Failed to fetch projects");
+      }
     } catch (error) {
       toast.error("Error fetching projects");
     } finally {
@@ -73,52 +81,93 @@ export default function ProjectsPage() {
 
   const handleCreateProject = async () => {
     try {
-      // In real app, this would create via API
-      toast.success("Project created successfully");
-      setShowCreateModal(false);
-      setFormData({
-        name: "",
-        description: "",
-        startDate: "",
-        endDate: "",
-        team: "",
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: formData.name,
+          description: formData.description,
+        }),
       });
-      fetchProjects();
+
+      if (response.ok) {
+        toast.success("Project created successfully");
+        setShowCreateModal(false);
+        setFormData({
+          name: "",
+          description: "",
+          startDate: "",
+          endDate: "",
+          team: "",
+        });
+        fetchProjects();
+      } else {
+        const error = await response.json();
+        toast.error(error.message || "Failed to create project");
+      }
     } catch (error) {
       toast.error("Error creating project");
     }
   };
 
   const handleEditProject = async () => {
-    if (!editingProject) return;
+    if (!editingProject || !formData.name.trim()) return;
 
     try {
-      // In real app, this would update via API
-      toast.success("Project updated successfully");
-      setShowEditModal(false);
-      setEditingProject(null);
-      setFormData({
-        name: "",
-        description: "",
-        startDate: "",
-        endDate: "",
-        team: "",
+      const response = await fetch(`/api/projects/${editingProject._id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: formData.name.trim(),
+          description: formData.description,
+        }),
       });
-      fetchProjects();
+
+      if (response.ok) {
+        toast.success("Project updated successfully");
+        setShowEditModal(false);
+        setEditingProject(null);
+        setFormData({
+          name: "",
+          description: "",
+          startDate: "",
+          endDate: "",
+          team: "",
+        });
+        fetchProjects(); // Refresh the list
+      } else {
+        const error = await response.json();
+        toast.error(error.message || "Failed to update project");
+      }
     } catch (error) {
       toast.error("Error updating project");
     }
   };
 
   const handleDeleteProject = async (projectId: string) => {
-    if (!confirm("Are you sure you want to delete this project?")) {
+    if (
+      !confirm(
+        "Are you sure you want to delete this project? This action cannot be undone."
+      )
+    ) {
       return;
     }
 
     try {
-      // In real app, this would delete via API
-      toast.success("Project deleted successfully");
-      fetchProjects();
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        toast.success("Project deleted successfully");
+        if (selectedProject?._id === projectId) {
+          setSelectedProject(null);
+        }
+        fetchProjects();
+      } else {
+        const error = await response.json();
+        toast.error(error.message || "Failed to delete project");
+      }
     } catch (error) {
       toast.error("Error deleting project");
     }
@@ -129,9 +178,9 @@ export default function ProjectsPage() {
     setFormData({
       name: project.name,
       description: project.description,
-      startDate: project.startDate,
-      endDate: project.endDate,
-      team: project.team.join(", "),
+      startDate: "",
+      endDate: "",
+      team: "",
     });
     setShowEditModal(true);
   };
@@ -305,8 +354,12 @@ export default function ProjectsPage() {
             {projects.map((project) => (
               <Card
                 key={project._id}
-                className="border-0 shadow-sm bg-white hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => openEditModal(project)}
+                className={`border-0 shadow-sm bg-white hover:shadow-md transition-shadow cursor-pointer ${
+                  selectedProject?._id === project._id
+                    ? "ring-2 ring-blue-500"
+                    : ""
+                }`}
+                onClick={() => setSelectedProject(project)}
               >
                 <CardContent className="p-4">
                   <div className="space-y-3">
@@ -314,13 +367,39 @@ export default function ProjectsPage() {
                       <h3 className="font-medium text-gray-900">
                         {project.name}
                       </h3>
-                      <span
-                        className={`px-2 py-1 text-xs rounded-full ${getStatusColor(
-                          project.status
-                        )}`}
-                      >
-                        {project.status}
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <span
+                          className={`px-2 py-1 text-xs rounded-full ${getStatusColor(
+                            project.status
+                          )}`}
+                        >
+                          {project.status}
+                        </span>
+                        <div className="flex space-x-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditModal(project);
+                            }}
+                            className="text-gray-400 hover:text-gray-600 hover:bg-gray-50 p-1 h-8 w-8"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteProject(project._id);
+                            }}
+                            className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1 h-8 w-8"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
 
                     <p className="text-sm text-gray-600 line-clamp-2">
@@ -360,20 +439,136 @@ export default function ProjectsPage() {
           <div className="space-y-6">
             <Card className="border-0 shadow-sm bg-white">
               <CardHeader>
-                <CardTitle className="text-lg font-semibold text-gray-900">
+                <CardTitle className="text-lg font-semibold text-gray-900 flex items-center justify-between">
                   Project Details
+                  {selectedProject && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openEditModal(selectedProject)}
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit
+                    </Button>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-8">
-                  <ClipboardList className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Select a project
-                  </h3>
-                  <p className="text-gray-600">
-                    Click on a project from the list to view details
-                  </p>
-                </div>
+                {selectedProject ? (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                        {selectedProject.name}
+                      </h3>
+                      <div className="flex items-center space-x-3 mb-4">
+                        <span
+                          className={`px-3 py-1 text-sm rounded-full ${getStatusColor(
+                            selectedProject.status
+                          )}`}
+                        >
+                          {selectedProject.status}
+                        </span>
+                        <span className="text-sm text-gray-500">
+                          {selectedProject.progress}% complete
+                        </span>
+                      </div>
+                      <p className="text-gray-600">
+                        {selectedProject.description}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-2">
+                          Start Date
+                        </h4>
+                        <div className="flex items-center text-gray-600">
+                          <Calendar className="h-4 w-4 mr-2" />
+                          {new Date(
+                            selectedProject.startDate
+                          ).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-2">
+                          End Date
+                        </h4>
+                        <div className="flex items-center text-gray-600">
+                          <Calendar className="h-4 w-4 mr-2" />
+                          {new Date(
+                            selectedProject.endDate
+                          ).toLocaleDateString()}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-3">
+                        Team Members
+                      </h4>
+                      <div className="flex items-center text-gray-600">
+                        <Users className="h-4 w-4 mr-2" />
+                        {selectedProject.team.length} members
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="font-medium text-gray-900 mb-3">
+                        Progress
+                      </h4>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span>Overall Progress</span>
+                          <span>{selectedProject.progress}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-3">
+                          <div
+                            className="bg-blue-600 h-3 rounded-full transition-all duration-300"
+                            style={{ width: `${selectedProject.progress}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {selectedProject.tasks &&
+                      selectedProject.tasks.length > 0 && (
+                        <div>
+                          <h4 className="font-medium text-gray-900 mb-3">
+                            Recent Tasks
+                          </h4>
+                          <div className="space-y-2">
+                            {selectedProject.tasks.slice(0, 3).map((task) => (
+                              <div
+                                key={task.id}
+                                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                              >
+                                <div className="flex items-center space-x-3">
+                                  {getTaskStatusIcon(task.status)}
+                                  <span className="text-sm font-medium">
+                                    {task.title}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  Due{" "}
+                                  {new Date(task.dueDate).toLocaleDateString()}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <ClipboardList className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      Select a project
+                    </h3>
+                    <p className="text-gray-600">
+                      Click on a project from the list to view details
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -382,7 +577,7 @@ export default function ProjectsPage() {
 
       {/* Create Project Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">
@@ -429,51 +624,6 @@ export default function ProjectsPage() {
                   placeholder="Describe your project"
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Start Date
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.startDate}
-                    onChange={(e) =>
-                      setFormData({ ...formData, startDate: e.target.value })
-                    }
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    End Date
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.endDate}
-                    onChange={(e) =>
-                      setFormData({ ...formData, endDate: e.target.value })
-                    }
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Team Members
-                </label>
-                <input
-                  type="text"
-                  value={formData.team}
-                  onChange={(e) =>
-                    setFormData({ ...formData, team: e.target.value })
-                  }
-                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter team member names (comma separated)"
-                />
-              </div>
             </div>
 
             <div className="flex space-x-3 p-6 border-t border-gray-100">
@@ -502,7 +652,7 @@ export default function ProjectsPage() {
 
       {/* Edit Project Modal */}
       {showEditModal && editingProject && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">
@@ -547,51 +697,6 @@ export default function ProjectsPage() {
                   rows={3}
                   className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Describe your project"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Start Date
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.startDate}
-                    onChange={(e) =>
-                      setFormData({ ...formData, startDate: e.target.value })
-                    }
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    End Date
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.endDate}
-                    onChange={(e) =>
-                      setFormData({ ...formData, endDate: e.target.value })
-                    }
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Team Members
-                </label>
-                <input
-                  type="text"
-                  value={formData.team}
-                  onChange={(e) =>
-                    setFormData({ ...formData, team: e.target.value })
-                  }
-                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter team member names (comma separated)"
                 />
               </div>
             </div>

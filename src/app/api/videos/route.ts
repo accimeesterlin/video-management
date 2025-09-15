@@ -66,16 +66,37 @@ export async function GET(request: NextRequest) {
     
     // Get user's company
     const user = await db.collection("users").findOne({ email: session.user.email });
-    if (!user?.companyId) {
-      return NextResponse.json({ error: "No company found" }, { status: 404 });
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    const query = user.companyId 
+      ? { companyId: user.companyId }
+      : { uploadedBy: user._id };
+
     const videos = await db.collection("videos")
-      .find({ companyId: user.companyId })
+      .find(query)
       .sort({ uploadedAt: -1 })
       .toArray();
 
-    return NextResponse.json(videos);
+    // Enrich videos with uploader names if missing
+    const enrichedVideos = await Promise.all(
+      videos.map(async (video) => {
+        if (!video.uploadedByName && video.uploadedBy) {
+          const uploader = await db.collection("users").findOne({ _id: video.uploadedBy });
+          return {
+            ...video,
+            uploadedByName: uploader?.name || uploader?.email || "Unknown User"
+          };
+        }
+        return {
+          ...video,
+          uploadedByName: video.uploadedByName || "Unknown User"
+        };
+      })
+    );
+
+    return NextResponse.json(enrichedVideos);
   } catch (error) {
     console.error("Videos fetch error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

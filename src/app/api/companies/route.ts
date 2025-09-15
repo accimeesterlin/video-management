@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
     // Find companies where user is a member
     const companies = await Company.find({
-      "members.userId": session.user.id,
+      "members.userId": session.user?.email,
     }).populate("members.userId", "name email");
 
     return NextResponse.json(companies);
@@ -58,10 +58,10 @@ export async function POST(request: NextRequest) {
       industry,
       size,
       location,
-      ownerId: session.user.id,
+      ownerId: session.user?.email,
       members: [
         {
-          userId: session.user.id,
+          userId: session.user?.email,
           role: "OWNER",
         },
       ],

@@ -49,19 +49,26 @@ export default function TeamPage() {
     phone: "",
     location: "",
     skills: "",
+    companyId: "",
   });
+  const [companies, setCompanies] = useState<any[]>([]);
 
   useEffect(() => {
     if (session) {
       fetchTeamMembers();
+      fetchCompanies();
     }
   }, [session]);
 
   const fetchTeamMembers = async () => {
     try {
-      // For now, we'll use mock data structure but empty
-      // In real app, this would fetch from API
-      setTeamMembers([]);
+      const response = await fetch("/api/team");
+      if (response.ok) {
+        const data = await response.json();
+        setTeamMembers(data);
+      } else {
+        toast.error("Failed to fetch team members");
+      }
     } catch (error) {
       toast.error("Error fetching team members");
     } finally {
@@ -69,21 +76,50 @@ export default function TeamPage() {
     }
   };
 
+  const fetchCompanies = async () => {
+    try {
+      const response = await fetch("/api/companies");
+      if (response.ok) {
+        const data = await response.json();
+        setCompanies(data);
+      }
+    } catch (error) {
+      console.error("Error fetching companies:", error);
+    }
+  };
+
   const handleInviteMember = async () => {
     try {
-      // In real app, this would send invitation email
-      toast.success("Invitation sent successfully");
-      setShowInviteModal(false);
-      setFormData({
-        name: "",
-        email: "",
-        role: "MEMBER",
-        phone: "",
-        location: "",
-        skills: "",
+      const response = await fetch("/api/team", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          role: formData.role,
+          companyId: formData.companyId,
+        }),
       });
+
+      if (response.ok) {
+        toast.success("Team member invited successfully");
+        setShowInviteModal(false);
+        setFormData({
+          name: "",
+          email: "",
+          role: "MEMBER",
+          phone: "",
+          location: "",
+          skills: "",
+          companyId: "",
+        });
+        fetchTeamMembers();
+      } else {
+        const error = await response.json();
+        toast.error(error.message || "Failed to invite team member");
+      }
     } catch (error) {
-      toast.error("Error sending invitation");
+      toast.error("Error inviting team member");
     }
   };
 
@@ -102,6 +138,7 @@ export default function TeamPage() {
         phone: "",
         location: "",
         skills: "",
+        companyId: "",
       });
     } catch (error) {
       toast.error("Error updating team member");
@@ -131,6 +168,7 @@ export default function TeamPage() {
       phone: member.phone || "",
       location: member.location || "",
       skills: member.skills.join(", "),
+      companyId: "",
     });
     setShowEditModal(true);
   };
@@ -143,6 +181,7 @@ export default function TeamPage() {
       phone: "",
       location: "",
       skills: "",
+      companyId: "",
     });
     setEditingMember(null);
   };
@@ -357,7 +396,7 @@ export default function TeamPage() {
 
       {/* Invite Member Modal */}
       {showInviteModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">
@@ -403,6 +442,26 @@ export default function TeamPage() {
                   className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter email address"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Company *
+                </label>
+                <select
+                  value={formData.companyId}
+                  onChange={(e) =>
+                    setFormData({ ...formData, companyId: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select a company</option>
+                  {companies.map((company) => (
+                    <option key={company._id} value={company._id}>
+                      {company.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -483,7 +542,11 @@ export default function TeamPage() {
               </Button>
               <Button
                 onClick={handleInviteMember}
-                disabled={!formData.name.trim() || !formData.email.trim()}
+                disabled={
+                  !formData.name.trim() ||
+                  !formData.email.trim() ||
+                  !formData.companyId
+                }
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3"
               >
                 <Save className="h-4 w-4 mr-2" />
@@ -496,7 +559,7 @@ export default function TeamPage() {
 
       {/* Edit Member Modal */}
       {showEditModal && editingMember && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">

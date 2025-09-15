@@ -12,6 +12,8 @@ import {
   BarChart3,
   Settings,
   LogOut,
+  Tag,
+  Zap,
 } from "lucide-react";
 
 const navigation = [
@@ -20,6 +22,8 @@ const navigation = [
   { name: "Team", href: "/dashboard/team", icon: Users },
   { name: "Projects", href: "/dashboard/projects", icon: ClipboardList },
   { name: "Videos", href: "/dashboard/videos", icon: Video },
+  { name: "Tags", href: "/dashboard/tags", icon: Tag },
+  { name: "Integrations", href: "/dashboard/integrations", icon: Zap },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
@@ -28,14 +32,14 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <div className="flex flex-col w-64 bg-white shadow-sm border-r border-gray-100">
+    <div className="flex flex-col w-64 bg-white shadow-sm border-r border-gray-100 h-screen fixed left-0 top-0">
       <div className="flex items-center justify-center h-16 px-4 border-b border-gray-100">
-        <h1 className="text-xl font-bold text-gray-900">Video Editor Pro</h1>
+        <h1 className="text-xl font-bold text-gray-900">Video Management</h1>
       </div>
 
       <nav className="flex-1 px-4 py-6 space-y-2">
         {navigation.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
           return (
             <Link
               key={item.name}

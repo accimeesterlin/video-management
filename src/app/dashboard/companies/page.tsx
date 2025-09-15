@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 interface Company {
   _id: string;
@@ -38,6 +39,7 @@ interface Company {
 
 export default function CompaniesPage() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -298,7 +300,8 @@ export default function CompaniesPage() {
           {companies.map((company) => (
             <Card
               key={company._id}
-              className="border-0 shadow-sm bg-white hover:shadow-md transition-shadow"
+              className="border-0 shadow-sm bg-white hover:shadow-md transition-shadow cursor-pointer"
+              onClick={() => router.push(`/dashboard/companies/${company._id}`)}
             >
               <CardHeader className="pb-4">
                 <div className="flex items-start justify-between">
@@ -321,7 +324,10 @@ export default function CompaniesPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => openEditModal(company)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEditModal(company);
+                      }}
                       className="text-gray-400 hover:text-gray-600 hover:bg-gray-50"
                     >
                       <Edit className="h-4 w-4" />
@@ -329,7 +335,10 @@ export default function CompaniesPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDeleteCompany(company._id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteCompany(company._id);
+                      }}
                       className="text-gray-400 hover:text-red-600 hover:bg-red-50"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -382,7 +391,7 @@ export default function CompaniesPage() {
 
       {/* Create Company Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">
@@ -526,7 +535,7 @@ export default function CompaniesPage() {
 
       {/* Edit Company Modal */}
       {showEditModal && editingCompany && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">
