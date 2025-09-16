@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/mongodb";
+import { getS3VideoUrl } from "@/lib/s3";
 import { ObjectId } from "mongodb";
 
 export async function GET(
@@ -63,6 +64,7 @@ export async function GET(
       uploadedByName: uploaderName,
       companyId: video.companyId?.toString(),
       comments: video.comments || [],
+      url: video.s3Key ? getS3VideoUrl(video.s3Key) : video.url, // Generate URL from s3Key if available
     };
 
     return NextResponse.json(videoData);
@@ -200,12 +202,27 @@ export async function DELETE(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    // Delete the video
+    // Delete the video from database
     await db.collection("videos").deleteOne({ _id: new ObjectId(id) });
 
-    // TODO: Also delete the video file from S3 storage
-    // const s3Key = video.s3Key;
-    // await deleteFromS3(s3Key);
+    // Delete the video file from S3 storage if URL exists
+    if (video.url && video.url.includes('amazonaws.com')) {
+      try {
+        // Extract S3 key from URL
+        const urlParts = video.url.split('/');
+        const s3Key = urlParts.slice(-2).join('/'); // Get the last two parts (folder/filename)
+        
+        // Delete from S3 (you'll need to implement S3 deletion based on your setup)
+        // await deleteFromS3(s3Key);
+        console.log('S3 deletion needed for key:', s3Key);
+        
+        // For now, we'll just log the deletion
+        // In production, you'd implement actual S3 deletion here
+      } catch (s3Error) {
+        console.error('Error deleting from S3:', s3Error);
+        // Don't fail the entire operation if S3 deletion fails
+      }
+    }
 
     return NextResponse.json({ message: "Video deleted successfully" });
   } catch (error) {

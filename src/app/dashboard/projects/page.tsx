@@ -52,6 +52,8 @@ export default function ProjectsPage() {
   const [formData, setFormData] = useState({
     name: "",
     description: "",
+    status: "Active",
+    progress: 0,
     startDate: "",
     endDate: "",
     team: "",
@@ -96,6 +98,8 @@ export default function ProjectsPage() {
         setFormData({
           name: "",
           description: "",
+          status: "Active",
+          progress: 0,
           startDate: "",
           endDate: "",
           team: "",
@@ -120,6 +124,11 @@ export default function ProjectsPage() {
         body: JSON.stringify({
           name: formData.name.trim(),
           description: formData.description,
+          status: formData.status,
+          progress: formData.progress,
+          startDate: formData.startDate || undefined,
+          endDate: formData.endDate || undefined,
+          team: formData.team ? formData.team.split(',').map(t => t.trim()).filter(t => t) : [],
         }),
       });
 
@@ -130,6 +139,8 @@ export default function ProjectsPage() {
         setFormData({
           name: "",
           description: "",
+          status: "Active",
+          progress: 0,
           startDate: "",
           endDate: "",
           team: "",
@@ -178,9 +189,11 @@ export default function ProjectsPage() {
     setFormData({
       name: project.name,
       description: project.description,
-      startDate: "",
-      endDate: "",
-      team: "",
+      status: project.status,
+      progress: project.progress,
+      startDate: project.startDate ? new Date(project.startDate).toISOString().split('T')[0] : "",
+      endDate: project.endDate ? new Date(project.endDate).toISOString().split('T')[0] : "",
+      team: project.team?.join(', ') || "",
     });
     setShowEditModal(true);
   };
@@ -189,6 +202,8 @@ export default function ProjectsPage() {
     setFormData({
       name: "",
       description: "",
+      status: "Active",
+      progress: 0,
       startDate: "",
       endDate: "",
       team: "",
@@ -237,18 +252,18 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Projects</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Projects</h1>
           <p className="text-gray-600 mt-2">
             Manage your video editing projects and track progress
           </p>
         </div>
         <Button
           onClick={() => setShowCreateModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium shadow-sm"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-3 rounded-lg font-medium shadow-sm w-full sm:w-auto"
         >
           <Plus className="h-5 w-5 mr-2" />
           New Project
@@ -256,7 +271,7 @@ export default function ProjectsPage() {
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <Card className="border-0 shadow-sm bg-white">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
@@ -345,7 +360,7 @@ export default function ProjectsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {/* Projects List */}
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-900">
@@ -361,13 +376,13 @@ export default function ProjectsPage() {
                 }`}
                 onClick={() => setSelectedProject(project)}
               >
-                <CardContent className="p-4">
+                <CardContent className="p-3 sm:p-4">
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-medium text-gray-900">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <h3 className="font-medium text-gray-900 truncate">
                         {project.name}
                       </h3>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center justify-between sm:justify-end space-x-2">
                         <span
                           className={`px-2 py-1 text-xs rounded-full ${getStatusColor(
                             project.status
@@ -406,7 +421,7 @@ export default function ProjectsPage() {
                       {project.description}
                     </p>
 
-                    <div className="flex items-center justify-between text-sm text-gray-500">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between text-sm text-gray-500 gap-2 sm:gap-0">
                       <span className="flex items-center">
                         <Users className="h-4 w-4 mr-1" />
                         {project.team.length} members
@@ -578,7 +593,7 @@ export default function ProjectsPage() {
       {/* Create Project Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto mx-4">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">
                 Create New Project
@@ -653,7 +668,7 @@ export default function ProjectsPage() {
       {/* Edit Project Modal */}
       {showEditModal && editingProject && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">
                 Edit Project
@@ -669,20 +684,40 @@ export default function ProjectsPage() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Project Name *
-                </label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter project name"
-                />
+            <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Project Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter project name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Status
+                  </label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) =>
+                      setFormData({ ...formData, status: e.target.value })
+                    }
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="On Hold">On Hold</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -698,6 +733,75 @@ export default function ProjectsPage() {
                   className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Describe your project"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Progress: {formData.progress}%
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={formData.progress}
+                  onChange={(e) =>
+                    setFormData({ ...formData, progress: parseInt(e.target.value) })
+                  }
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between text-sm text-gray-500 mt-1">
+                  <span>0%</span>
+                  <span>50%</span>
+                  <span>100%</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.startDate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, startDate: e.target.value })
+                    }
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.endDate}
+                    onChange={(e) =>
+                      setFormData({ ...formData, endDate: e.target.value })
+                    }
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Team Members (comma-separated names)
+                </label>
+                <input
+                  type="text"
+                  value={formData.team}
+                  onChange={(e) =>
+                    setFormData({ ...formData, team: e.target.value })
+                  }
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="John Doe, Jane Smith, Bob Johnson"
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Enter team member names separated by commas
+                </p>
               </div>
             </div>
 

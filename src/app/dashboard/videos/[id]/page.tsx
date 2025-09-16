@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,9 @@ import {
   Link,
   ExternalLink,
   FileText,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
@@ -74,6 +77,35 @@ interface VideoItem {
     author: string;
     createdAt: string;
   }>;
+  versions?: Array<{
+    id: string;
+    versionNumber: number;
+    url: string;
+    filename: string;
+    uploadedBy: string;
+    uploadedByName: string;
+    uploadedAt: string;
+    description?: string;
+    size: number;
+    duration?: number;
+    isActive: boolean;
+  }>;
+  shorts?: Array<{
+    id: string;
+    url: string;
+    filename: string;
+    uploadedBy: string;
+    uploadedByName: string;
+    uploadedAt: string;
+    description?: string;
+    duration: number;
+    size: number;
+    votes: Array<{
+      userId: string;
+      userName: string;
+      votedAt: string;
+    }>;
+  }>;
 }
 
 export default function VideoDetailPage() {
@@ -101,12 +133,68 @@ export default function VideoDetailPage() {
     description: "",
     tags: ""
   });
+  const [thumbnailsCollapsed, setThumbnailsCollapsed] = useState(true);
+  const [resourcesCollapsed, setResourcesCollapsed] = useState(true);
+  const [editingComment, setEditingComment] = useState<string | null>(null);
+  const [editCommentText, setEditCommentText] = useState("");
+  const [versionsCollapsed, setVersionsCollapsed] = useState(true);
+  const [showVersionModal, setShowVersionModal] = useState(false);
+  const [uploadingVersion, setUploadingVersion] = useState(false);
+  const [versionData, setVersionData] = useState({
+    description: "",
+    file: null as File | null
+  });
+  const [shortsCollapsed, setShortsCollapsed] = useState(true);
+  const [showShortsModal, setShowShortsModal] = useState(false);
+  const [uploadingShort, setUploadingShort] = useState(false);
+  
+  // View modal states
+  const [showThumbnailsViewModal, setShowThumbnailsViewModal] = useState(false);
+  const [showResourcesViewModal, setShowResourcesViewModal] = useState(false);
+  const [showVersionsViewModal, setShowVersionsViewModal] = useState(false);
+  const [showShortsViewModal, setShowShortsViewModal] = useState(false);
+  const [shortData, setShortData] = useState({
+    description: "",
+    file: null as File | null
+  });
+  
+  // Modal refs for click outside detection
+  const thumbnailModalRef = useRef<HTMLDivElement>(null);
+  const resourceModalRef = useRef<HTMLDivElement>(null);
+  const editModalRef = useRef<HTMLDivElement>(null);
+  const shareModalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (session && params.id) {
       fetchVideo(params.id as string);
     }
   }, [session, params.id]);
+
+  // Handle click outside modals
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (thumbnailModalRef.current && !thumbnailModalRef.current.contains(event.target as Node)) {
+        setShowThumbnailModal(false);
+      }
+      if (resourceModalRef.current && !resourceModalRef.current.contains(event.target as Node)) {
+        setShowResourceModal(false);
+        setResourceData({ name: "", type: "link", url: "", description: "" });
+      }
+      if (editModalRef.current && !editModalRef.current.contains(event.target as Node)) {
+        setShowEditModal(false);
+      }
+      if (shareModalRef.current && !shareModalRef.current.contains(event.target as Node)) {
+        setShowShareModal(false);
+      }
+    };
+
+    if (showThumbnailModal || showResourceModal || showEditModal || showShareModal || 
+        showThumbnailsViewModal || showResourcesViewModal || showVersionsViewModal || showShortsViewModal) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showThumbnailModal, showResourceModal, showEditModal, showShareModal, 
+      showThumbnailsViewModal, showResourcesViewModal, showVersionsViewModal, showShortsViewModal]);
 
   const fetchVideo = async (videoId: string) => {
     try {
@@ -297,6 +385,261 @@ export default function VideoDetailPage() {
     }
   };
 
+  const handleEditComment = (commentId: string, text: string) => {
+    setEditingComment(commentId);
+    setEditCommentText(text);
+  };
+
+  const handleSaveCommentEdit = async (commentId: string) => {
+    if (!video || !editCommentText.trim()) return;
+
+    try {
+      const response = await fetch(`/api/videos/${video._id}/comments/${commentId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: editCommentText.trim() }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setVideo(prev => prev ? {
+          ...prev,
+          comments: prev.comments.map(comment => 
+            comment.id === commentId ? result.comment : comment
+          )
+        } : null);
+        setEditingComment(null);
+        setEditCommentText("");
+        toast.success('Comment updated successfully');
+      } else {
+        const error = await response.json();
+        toast.error(error.message || 'Failed to update comment');
+      }
+    } catch (error) {
+      toast.error('Error updating comment');
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!video || !confirm("Are you sure you want to delete this comment?")) return;
+
+    try {
+      const response = await fetch(`/api/videos/${video._id}/comments/${commentId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setVideo(prev => prev ? {
+          ...prev,
+          comments: prev.comments.filter(comment => comment.id !== commentId)
+        } : null);
+        toast.success('Comment deleted successfully');
+      } else {
+        const error = await response.json();
+        toast.error(error.message || 'Failed to delete comment');
+      }
+    } catch (error) {
+      toast.error('Error deleting comment');
+    }
+  };
+
+  const handleVersionUpload = async () => {
+    if (!video || !versionData.file) {
+      toast.error("Please select a video file");
+      return;
+    }
+
+    setUploadingVersion(true);
+    try {
+      // Get upload URL
+      const uploadUrlResponse = await fetch('/api/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: versionData.file.name,
+          fileType: versionData.file.type,
+          fileSize: versionData.file.size,
+        }),
+      });
+
+      if (!uploadUrlResponse.ok) {
+        const error = await uploadUrlResponse.json();
+        toast.error(error.error || "Failed to get upload URL");
+        return;
+      }
+
+      const { uploadUrl, videoKey } = await uploadUrlResponse.json();
+
+      // Upload file to S3
+      const formData = new FormData();
+      formData.append('file', versionData.file);
+      
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: versionData.file,
+      });
+
+      if (!uploadResponse.ok) {
+        toast.error("Failed to upload file");
+        return;
+      }
+
+      // Create version record
+      const versionResponse = await fetch(`/api/videos/${video._id}/versions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoKey,
+          filename: versionData.file.name,
+          description: versionData.description,
+          size: versionData.file.size,
+        }),
+      });
+
+      if (versionResponse.ok) {
+        const result = await versionResponse.json();
+        setVideo(prev => prev ? {
+          ...prev,
+          versions: [...(prev.versions || []), result.version]
+        } : null);
+        setVersionData({ description: "", file: null });
+        setShowVersionModal(false);
+        toast.success('Version uploaded successfully');
+      } else {
+        const error = await versionResponse.json();
+        toast.error(error.message || 'Failed to create version');
+      }
+    } catch (error) {
+      toast.error('Error uploading version');
+    } finally {
+      setUploadingVersion(false);
+    }
+  };
+
+  const handleSetActiveVersion = async (versionId: string) => {
+    if (!video) return;
+
+    try {
+      const response = await fetch(`/api/videos/${video._id}/versions/${versionId}/activate`, {
+        method: 'PUT',
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setVideo(prev => prev ? {
+          ...prev,
+          versions: prev.versions?.map(version => ({
+            ...version,
+            isActive: version.id === versionId
+          }))
+        } : null);
+        toast.success('Version set as active');
+      } else {
+        const error = await response.json();
+        toast.error(error.message || 'Failed to set active version');
+      }
+    } catch (error) {
+      toast.error('Error setting active version');
+    }
+  };
+
+  const handleShortUpload = async () => {
+    if (!video || !shortData.file) {
+      toast.error("Please select a video file");
+      return;
+    }
+
+    // Validate that it's a short video (less than 60 seconds would be ideal)
+    setUploadingShort(true);
+    try {
+      // Get upload URL
+      const uploadUrlResponse = await fetch('/api/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: shortData.file.name,
+          fileType: shortData.file.type,
+          fileSize: shortData.file.size,
+        }),
+      });
+
+      if (!uploadUrlResponse.ok) {
+        const error = await uploadUrlResponse.json();
+        toast.error(error.error || "Failed to get upload URL");
+        return;
+      }
+
+      const { uploadUrl, videoKey } = await uploadUrlResponse.json();
+
+      // Upload file to S3
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: shortData.file,
+      });
+
+      if (!uploadResponse.ok) {
+        toast.error("Failed to upload file");
+        return;
+      }
+
+      // Create short record
+      const shortResponse = await fetch(`/api/videos/${video._id}/shorts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoKey,
+          filename: shortData.file.name,
+          description: shortData.description,
+          size: shortData.file.size,
+        }),
+      });
+
+      if (shortResponse.ok) {
+        const result = await shortResponse.json();
+        setVideo(prev => prev ? {
+          ...prev,
+          shorts: [...(prev.shorts || []), result.short]
+        } : null);
+        setShortData({ description: "", file: null });
+        setShowShortsModal(false);
+        toast.success('Short uploaded successfully');
+      } else {
+        const error = await shortResponse.json();
+        toast.error(error.message || 'Failed to create short');
+      }
+    } catch (error) {
+      toast.error('Error uploading short');
+    } finally {
+      setUploadingShort(false);
+    }
+  };
+
+  const handleShortVote = async (shortId: string) => {
+    if (!video) return;
+
+    try {
+      const response = await fetch(`/api/videos/${video._id}/shorts/${shortId}/vote`, {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setVideo(prev => prev ? {
+          ...prev,
+          shorts: prev.shorts?.map(short => 
+            short.id === shortId ? result.short : short
+          )
+        } : null);
+        toast.success(result.message);
+      } else {
+        const error = await response.json();
+        toast.error(error.message || 'Failed to vote on short');
+      }
+    } catch (error) {
+      toast.error('Error voting on short');
+    }
+  };
+
   const handleEditVideo = () => {
     if (!video) return;
     setEditFormData({
@@ -340,20 +683,34 @@ export default function VideoDetailPage() {
     }
   };
 
-  const handleDownload = () => {
-    if (!video?.url) {
-      toast.error("Video URL not available");
+  const handleDownload = async () => {
+    if (!video) {
+      toast.error("Video not available");
       return;
     }
-    
-    // Create download link
-    const link = document.createElement('a');
-    link.href = video.url;
-    link.download = video.filename || video.title;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast.success("Download started");
+
+    try {
+      const response = await fetch(`/api/videos/${video._id}/download`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Create download link
+        const link = document.createElement('a');
+        link.href = data.downloadUrl;
+        link.download = data.filename || video.title;
+        link.target = '_blank';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success("Download started");
+      } else {
+        const error = await response.json();
+        toast.error(error.message || "Failed to download video");
+      }
+    } catch (error) {
+      toast.error("Error downloading video");
+    }
   };
 
   const handleShare = () => {
@@ -473,6 +830,14 @@ export default function VideoDetailPage() {
             <Edit className="h-4 w-4 mr-2" />
             Edit
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowVersionModal(true)}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Add Version
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowShortsModal(true)}>
+            <Video className="h-4 w-4 mr-2" />
+            Add Short
+          </Button>
           <Button variant="outline" size="sm" onClick={handleDelete}>
             <Trash2 className="h-4 w-4 mr-2" />
             Delete
@@ -480,19 +845,35 @@ export default function VideoDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 lg:gap-6">
         {/* Video Player */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-3 space-y-4 lg:space-y-6">
           <Card className="border-0 shadow-sm bg-white">
             <CardContent className="p-0">
               <div className="aspect-video bg-gray-900 rounded-lg flex items-center justify-center">
                 {video.url ? (
                   <video
-                    src={video.url}
                     controls
                     className="w-full h-full rounded-lg"
                     poster={video.thumbnail}
+                    preload="metadata"
+                    onError={(e) => {
+                      console.error('Video load error:', e, 'URL:', video.url);
+                      // Don't show error immediately, give it some time to load
+                      setTimeout(() => {
+                        if (e.target && (e.target as HTMLVideoElement).error) {
+                          toast.error('Unable to load video. Please try downloading instead.');
+                        }
+                      }, 2000);
+                    }}
+                    onLoadStart={() => console.log('Video loading started')}
+                    onCanPlay={() => console.log('Video can start playing')}
+                    onLoadedData={() => console.log('Video data loaded')}
                   >
+                    <source src={video.url} type="video/mp4" />
+                    <source src={video.url} type="video/webm" />
+                    <source src={video.url} type="video/avi" />
+                    <source src={video.url} type="video/mov" />
                     Your browser does not support the video tag.
                   </video>
                 ) : (
@@ -500,6 +881,7 @@ export default function VideoDetailPage() {
                     <Video className="h-16 w-16 mx-auto mb-4 opacity-50" />
                     <p className="text-lg font-medium">Video Preview</p>
                     <p className="text-sm opacity-75">{video.filename}</p>
+                    <p className="text-xs opacity-50 mt-2">Video file not available</p>
                   </div>
                 )}
               </div>
@@ -544,14 +926,24 @@ export default function VideoDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Thumbnails Section */}
+          {/* Quick Actions Section */}
           <Card className="border-0 shadow-sm bg-white">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center">
-                  <Play className="h-5 w-5 mr-2" />
-                  Thumbnails ({video.thumbnails?.length || 0})
-                </CardTitle>
+                <button
+                  onClick={() => setThumbnailsCollapsed(!thumbnailsCollapsed)}
+                  className="flex items-center group hover:bg-gray-50 p-2 -m-2 rounded-lg transition-colors"
+                >
+                  {thumbnailsCollapsed ? (
+                    <ChevronRight className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
+                  )}
+                  <CardTitle className="flex items-center">
+                    <Play className="h-5 w-5 mr-2" />
+                    Thumbnails ({video.thumbnails?.length || 0})
+                  </CardTitle>
+                </button>
                 <Button
                   onClick={() => setShowThumbnailModal(true)}
                   size="sm"
@@ -562,6 +954,7 @@ export default function VideoDetailPage() {
                 </Button>
               </div>
             </CardHeader>
+            {!thumbnailsCollapsed && (
             <CardContent>
               {video.thumbnails && video.thumbnails.length > 0 ? (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -605,16 +998,27 @@ export default function VideoDetailPage() {
                 </div>
               )}
             </CardContent>
+            )}
           </Card>
 
           {/* Resources Section */}
           <Card className="border-0 shadow-sm bg-white">
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center">
-                  <Link className="h-5 w-5 mr-2" />
-                  Resources ({video.resources?.length || 0})
-                </CardTitle>
+                <button
+                  onClick={() => setResourcesCollapsed(!resourcesCollapsed)}
+                  className="flex items-center group hover:bg-gray-50 p-2 -m-2 rounded-lg transition-colors"
+                >
+                  {resourcesCollapsed ? (
+                    <ChevronRight className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
+                  )}
+                  <CardTitle className="flex items-center">
+                    <Link className="h-5 w-5 mr-2" />
+                    Resources ({video.resources?.length || 0})
+                  </CardTitle>
+                </button>
                 <Button
                   onClick={() => setShowResourceModal(true)}
                   size="sm"
@@ -625,6 +1029,7 @@ export default function VideoDetailPage() {
                 </Button>
               </div>
             </CardHeader>
+            {!resourcesCollapsed && (
             <CardContent>
               {video.resources && video.resources.length > 0 ? (
                 <div className="space-y-3">
@@ -680,6 +1085,7 @@ export default function VideoDetailPage() {
                 </div>
               )}
             </CardContent>
+            )}
           </Card>
 
           {/* Comments Section */}
@@ -738,17 +1144,63 @@ export default function VideoDetailPage() {
                         </div>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2">
-                          <h4 className="text-sm font-medium text-gray-900">
-                            {comment.author}
-                          </h4>
-                          <span className="text-xs text-gray-500">
-                            {new Date(comment.createdAt).toLocaleDateString()}
-                          </span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <h4 className="text-sm font-medium text-gray-900">
+                              {comment.author}
+                            </h4>
+                            <span className="text-xs text-gray-500">
+                              {new Date(comment.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <button
+                              onClick={() => handleEditComment(comment.id, comment.text)}
+                              className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                            >
+                              <Edit className="h-3 w-3" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteComment(comment.id)}
+                              className="p-1 text-gray-400 hover:text-red-600 rounded"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
                         </div>
-                        <p className="text-sm text-gray-600 mt-1">
-                          {comment.text}
-                        </p>
+                        {editingComment === comment.id ? (
+                          <div className="mt-2 space-y-2">
+                            <textarea
+                              value={editCommentText}
+                              onChange={(e) => setEditCommentText(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                              rows={2}
+                            />
+                            <div className="flex space-x-2">
+                              <Button
+                                onClick={() => handleSaveCommentEdit(comment.id)}
+                                size="sm"
+                                className="bg-blue-600 hover:bg-blue-700 text-white"
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                onClick={() => {
+                                  setEditingComment(null);
+                                  setEditCommentText("");
+                                }}
+                                size="sm"
+                                variant="outline"
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-600 mt-1">
+                            {comment.text}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -764,10 +1216,201 @@ export default function VideoDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Versions Section */}
+          <Card className="border-0 shadow-sm bg-white">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setVersionsCollapsed(!versionsCollapsed)}
+                  className="flex items-center group hover:bg-gray-50 p-2 -m-2 rounded-lg transition-colors"
+                >
+                  {versionsCollapsed ? (
+                    <ChevronRight className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
+                  )}
+                  <CardTitle className="flex items-center">
+                    <RefreshCw className="h-5 w-5 mr-2" />
+                    Versions ({video.versions?.length || 0})
+                  </CardTitle>
+                </button>
+                <Button
+                  onClick={() => setShowVersionModal(true)}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Upload Version
+                </Button>
+              </div>
+            </CardHeader>
+            {!versionsCollapsed && (
+            <CardContent>
+              {video.versions && video.versions.length > 0 ? (
+                <div className="space-y-3">
+                  {video.versions.map((version) => (
+                    <div key={version.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2">
+                            <div className="flex items-center space-x-2">
+                              <h4 className="font-medium text-gray-900">
+                                Version {version.versionNumber}
+                              </h4>
+                              {version.isActive && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                  Active
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <p className="text-sm text-gray-600 mb-2">{version.filename}</p>
+                          
+                          {version.description && (
+                            <p className="text-sm text-gray-700 mb-2">{version.description}</p>
+                          )}
+                          
+                          <div className="flex items-center space-x-4 text-xs text-gray-500">
+                            <span>Uploaded by {version.uploadedByName}</span>
+                            <span>•</span>
+                            <span>{formatFileSize(version.size)}</span>
+                            <span>•</span>
+                            <span>{new Date(version.uploadedAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          {!version.isActive && (
+                            <Button
+                              onClick={() => handleSetActiveVersion(version.id)}
+                              size="sm"
+                              variant="outline"
+                              className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                            >
+                              Set Active
+                            </Button>
+                          )}
+                          <Button
+                            onClick={() => window.open(version.url, '_blank')}
+                            size="sm"
+                            variant="outline"
+                          >
+                            <Play className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <RefreshCw className="h-12 w-12 text-gray-300 mx-auto mb-2" />
+                  <p className="text-gray-500">No versions yet</p>
+                  <p className="text-sm text-gray-400">
+                    Upload different versions for team review
+                  </p>
+                </div>
+              )}
+            </CardContent>
+            )}
+          </Card>
+
+          {/* Shorts Section */}
+          <Card className="border-0 shadow-sm bg-white">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setShortsCollapsed(!shortsCollapsed)}
+                  className="flex items-center group hover:bg-gray-50 p-2 -m-2 rounded-lg transition-colors"
+                >
+                  {shortsCollapsed ? (
+                    <ChevronRight className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
+                  )}
+                  <CardTitle className="flex items-center">
+                    <Video className="h-5 w-5 mr-2" />
+                    Shorts ({video.shorts?.length || 0})
+                  </CardTitle>
+                </button>
+                <Button
+                  onClick={() => setShowShortsModal(true)}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Upload Short
+                </Button>
+              </div>
+            </CardHeader>
+            {!shortsCollapsed && (
+            <CardContent>
+              {video.shorts && video.shorts.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {video.shorts.map((short) => (
+                    <div key={short.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                      <div className="space-y-3">
+                        {/* Short Video Preview */}
+                        <div className="aspect-video bg-gray-900 rounded-lg flex items-center justify-center">
+                          <video
+                            src={short.url}
+                            controls
+                            className="w-full h-full rounded-lg"
+                            preload="metadata"
+                          >
+                            Your browser does not support the video tag.
+                          </video>
+                        </div>
+                        
+                        {/* Short Info */}
+                        <div>
+                          <p className="text-sm font-medium text-gray-900 mb-1">{short.filename}</p>
+                          {short.description && (
+                            <p className="text-sm text-gray-600 mb-2">{short.description}</p>
+                          )}
+                          <div className="flex items-center justify-between text-xs text-gray-500">
+                            <div className="flex items-center space-x-2">
+                              <span>by {short.uploadedByName}</span>
+                              <span>•</span>
+                              <span>{new Date(short.uploadedAt).toLocaleDateString()}</span>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={() => handleShortVote(short.id)}
+                                className="flex items-center space-x-1 px-2 py-1 rounded-full bg-gray-100 hover:bg-blue-50 transition-colors"
+                              >
+                                <Heart className={`h-3 w-3 ${
+                                  short.votes.some(vote => vote.userId === session?.user?.email) 
+                                    ? 'fill-red-500 text-red-500' 
+                                    : 'text-gray-400'
+                                }`} />
+                                <span className="text-xs">{short.votes.length}</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <Video className="h-12 w-12 text-gray-300 mx-auto mb-2" />
+                  <p className="text-gray-500">No shorts yet</p>
+                  <p className="text-sm text-gray-400">
+                    Upload short video clips for team voting
+                  </p>
+                </div>
+              )}
+            </CardContent>
+            )}
+          </Card>
         </div>
 
         {/* Sidebar */}
-        <div className="space-y-6">
+        <div className="space-y-4 lg:space-y-6">
           {/* Video Stats */}
           <Card className="border-0 shadow-sm bg-white">
             <CardHeader>
@@ -900,24 +1543,66 @@ export default function VideoDetailPage() {
                   <Share2 className="h-4 w-4 mr-2" />
                   Share Video
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="w-full justify-start"
-                  onClick={() => setShowThumbnailModal(true)}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Thumbnail
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="w-full justify-start"
-                  onClick={() => setShowResourceModal(true)}
-                >
-                  <Link className="h-4 w-4 mr-2" />
-                  Add Resource
-                </Button>
+                <div className="border-t border-gray-100 pt-2 mt-2">
+                  <p className="text-xs font-medium text-gray-500 mb-2 px-1">VIEW & MANAGE</p>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full justify-start mb-1"
+                    onClick={() => setShowThumbnailsViewModal(true)}
+                  >
+                    <Play className="h-4 w-4 mr-2" />
+                    Thumbnails ({video.thumbnails?.length || 0})
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full justify-start mb-1"
+                    onClick={() => setShowResourcesViewModal(true)}
+                  >
+                    <Link className="h-4 w-4 mr-2" />
+                    Resources ({video.resources?.length || 0})
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full justify-start mb-1"
+                    onClick={() => setShowVersionsViewModal(true)}
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Versions ({video.versions?.length || 0})
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full justify-start"
+                    onClick={() => setShowShortsViewModal(true)}
+                  >
+                    <Video className="h-4 w-4 mr-2" />
+                    Shorts ({video.shorts?.length || 0})
+                  </Button>
+                </div>
+                <div className="border-t border-gray-100 pt-2 mt-2">
+                  <p className="text-xs font-medium text-gray-500 mb-2 px-1">CREATE NEW</p>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full justify-start mb-1"
+                    onClick={() => setShowThumbnailModal(true)}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Thumbnail
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full justify-start"
+                    onClick={() => setShowResourceModal(true)}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Resource
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -927,7 +1612,7 @@ export default function VideoDetailPage() {
       {/* Thumbnail Upload Modal */}
       {showThumbnailModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+          <div ref={thumbnailModalRef} className="bg-white rounded-2xl shadow-xl w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">Upload Thumbnail</h3>
               <button
@@ -987,7 +1672,7 @@ export default function VideoDetailPage() {
       {/* Resource Modal */}
       {showResourceModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+          <div ref={resourceModalRef} className="bg-white rounded-2xl shadow-xl w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">Add Resource</h3>
               <button
@@ -1095,7 +1780,7 @@ export default function VideoDetailPage() {
       {/* Edit Video Modal */}
       {showEditModal && video && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+          <div ref={editModalRef} className="bg-white rounded-2xl shadow-xl w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">Edit Video</h3>
               <button
@@ -1170,7 +1855,7 @@ export default function VideoDetailPage() {
       {/* Share Video Modal */}
       {showShareModal && video && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+          <div ref={shareModalRef} className="bg-white rounded-2xl shadow-xl w-full max-w-md">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">Share Video</h3>
               <button
@@ -1218,7 +1903,7 @@ export default function VideoDetailPage() {
                 <div className="space-y-3">
                   <h4 className="font-medium text-gray-900">Share Link</h4>
                   <div className="flex items-center space-x-2">
-                    <div className="flex-1 px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 font-mono">
+                    <div className="flex-1 px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 font-mono break-all">
                       {`${window.location.origin}/shared/video/${video._id}`}
                     </div>
                     <Button
@@ -1246,6 +1931,544 @@ export default function VideoDetailPage() {
               >
                 Done
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Version Upload Modal */}
+      {showVersionModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-xl font-semibold text-gray-900">Upload New Version</h3>
+              <button
+                onClick={() => {
+                  setShowVersionModal(false);
+                  setVersionData({ description: "", file: null });
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Video File *
+                </label>
+                <input
+                  type="file"
+                  accept="video/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setVersionData(prev => ({ ...prev, file }));
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={uploadingVersion}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Upload a new version of this video
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Version Description (Optional)
+                </label>
+                <textarea
+                  value={versionData.description}
+                  onChange={(e) => setVersionData(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  rows={3}
+                  placeholder="Describe what changed in this version..."
+                  disabled={uploadingVersion}
+                />
+              </div>
+
+              {versionData.file && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="flex items-center space-x-3">
+                    <Video className="h-5 w-5 text-blue-600" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-blue-900">{versionData.file.name}</p>
+                      <p className="text-xs text-blue-700">
+                        {(versionData.file.size / (1024 * 1024)).toFixed(1)} MB
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex space-x-3 p-6 border-t border-gray-100">
+              <Button
+                onClick={() => {
+                  setShowVersionModal(false);
+                  setVersionData({ description: "", file: null });
+                }}
+                variant="outline"
+                className="flex-1"
+                disabled={uploadingVersion}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleVersionUpload}
+                disabled={!versionData.file || uploadingVersion}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {uploadingVersion ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Uploading...
+                  </>
+                ) : (
+                  'Upload Version'
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Shorts Upload Modal */}
+      {showShortsModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-xl font-semibold text-gray-900">Upload Short</h3>
+              <button
+                onClick={() => {
+                  setShowShortsModal(false);
+                  setShortData({ description: "", file: null });
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Short Video File *
+                </label>
+                <input
+                  type="file"
+                  accept="video/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      // Optional: Add validation for video duration (e.g., max 60 seconds)
+                      setShortData(prev => ({ ...prev, file }));
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={uploadingShort}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Upload a short video clip (ideally under 60 seconds)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Description (Optional)
+                </label>
+                <textarea
+                  value={shortData.description}
+                  onChange={(e) => setShortData(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  rows={3}
+                  placeholder="Describe this short clip..."
+                  disabled={uploadingShort}
+                />
+              </div>
+
+              {shortData.file && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="flex items-center space-x-3">
+                    <Video className="h-5 w-5 text-blue-600" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-blue-900">{shortData.file.name}</p>
+                      <p className="text-xs text-blue-700">
+                        {(shortData.file.size / (1024 * 1024)).toFixed(1)} MB
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <div className="flex items-start">
+                  <Heart className="h-4 w-4 text-yellow-600 mt-0.5 mr-2 flex-shrink-0" />
+                  <div className="text-sm">
+                    <p className="text-yellow-800 font-medium">Team Voting</p>
+                    <p className="text-yellow-700 mt-1">
+                      Team members can vote on shorts to help decide which clips work best.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex space-x-3 p-6 border-t border-gray-100">
+              <Button
+                onClick={() => {
+                  setShowShortsModal(false);
+                  setShortData({ description: "", file: null });
+                }}
+                variant="outline"
+                className="flex-1"
+                disabled={uploadingShort}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleShortUpload}
+                disabled={!shortData.file || uploadingShort}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {uploadingShort ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Uploading...
+                  </>
+                ) : (
+                  'Upload Short'
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Thumbnails View Modal */}
+      {showThumbnailsViewModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-xl font-semibold text-gray-900">Thumbnails ({video.thumbnails?.length || 0})</h3>
+              <div className="flex items-center space-x-2">
+                <Button
+                  onClick={() => setShowThumbnailModal(true)}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Upload
+                </Button>
+                <button
+                  onClick={() => setShowThumbnailsViewModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              {video.thumbnails && video.thumbnails.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {video.thumbnails.map((thumbnail: any) => (
+                    <div key={thumbnail.id} className="relative group">
+                      <img
+                        src={thumbnail.url}
+                        alt="Thumbnail"
+                        className="w-full h-32 object-cover rounded-lg border-2 border-gray-200"
+                      />
+                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 rounded-lg flex items-center justify-center">
+                        <div className="flex space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => handleThumbnailVote(thumbnail.id)}
+                            className="bg-white text-gray-800 p-2 rounded-full hover:bg-gray-100 transition-colors"
+                          >
+                            <Heart className={`h-4 w-4 ${
+                              thumbnail.votes.some((vote: any) => vote.userId === session?.user?.email) 
+                                ? 'fill-red-500 text-red-500' 
+                                : 'text-gray-600'
+                            }`} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="absolute bottom-2 left-2 bg-black bg-opacity-75 text-white text-xs px-2 py-1 rounded">
+                        {thumbnail.votes?.length || 0} votes
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <Play className="h-16 w-16 mx-auto text-gray-300 mb-4" />
+                  <p className="text-gray-500 text-lg">No thumbnails yet</p>
+                  <p className="text-sm text-gray-400 mb-4">
+                    Upload thumbnail images to get feedback from your team
+                  </p>
+                  <Button
+                    onClick={() => {
+                      setShowThumbnailsViewModal(false);
+                      setShowThumbnailModal(true);
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Upload First Thumbnail
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resources View Modal */}
+      {showResourcesViewModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-xl font-semibold text-gray-900">Resources ({video.resources?.length || 0})</h3>
+              <div className="flex items-center space-x-2">
+                <Button
+                  onClick={() => setShowResourceModal(true)}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Resource
+                </Button>
+                <button
+                  onClick={() => setShowResourcesViewModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              {video.resources && video.resources.length > 0 ? (
+                <div className="space-y-3">
+                  {video.resources.map((resource: any) => (
+                    <div key={resource.id} className="flex items-start space-x-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
+                      <div className="flex-shrink-0 mt-1">
+                        {resource.type === 'link' ? <ExternalLink className="h-4 w-4" /> :
+                         resource.type === 'file' ? <Download className="h-4 w-4" /> :
+                         <FileText className="h-4 w-4" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-gray-900 truncate">{resource.name}</h4>
+                        {resource.description && (
+                          <p className="text-sm text-gray-600 mt-1">{resource.description}</p>
+                        )}
+                        {resource.url && (
+                          <a 
+                            href={resource.url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-sm text-blue-600 hover:text-blue-800 mt-1 inline-block"
+                          >
+                            {resource.url}
+                          </a>
+                        )}
+                      </div>
+                      <Button
+                        onClick={() => handleDeleteResource(resource.id)}
+                        size="sm"
+                        variant="outline"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <Link className="h-16 w-16 mx-auto text-gray-300 mb-4" />
+                  <p className="text-gray-500 text-lg">No resources yet</p>
+                  <p className="text-sm text-gray-400 mb-4">
+                    Add links, files, or documents related to this video
+                  </p>
+                  <Button
+                    onClick={() => {
+                      setShowResourcesViewModal(false);
+                      setShowResourceModal(true);
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add First Resource
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Versions View Modal */}
+      {showVersionsViewModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-xl font-semibold text-gray-900">Versions ({video.versions?.length || 0})</h3>
+              <div className="flex items-center space-x-2">
+                <Button
+                  onClick={() => setShowVersionModal(true)}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Upload Version
+                </Button>
+                <button
+                  onClick={() => setShowVersionsViewModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              {video.versions && video.versions.length > 0 ? (
+                <div className="space-y-3">
+                  {video.versions.map((version: any) => (
+                    <div key={version.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <h4 className="font-medium text-gray-900">{version.filename}</h4>
+                          {version.isActive && (
+                            <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        {version.description && (
+                          <p className="text-sm text-gray-600 mt-1">{version.description}</p>
+                        )}
+                        <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
+                          <span>Size: {formatFileSize(version.size)}</span>
+                          <span>Uploaded: {new Date(version.uploadedAt).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                      {!version.isActive && (
+                        <Button
+                          onClick={() => handleSetActiveVersion(version.id)}
+                          size="sm"
+                          variant="outline"
+                          className="text-blue-600 hover:text-blue-700"
+                        >
+                          Set Active
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <RefreshCw className="h-16 w-16 mx-auto text-gray-300 mb-4" />
+                  <p className="text-gray-500 text-lg">No versions yet</p>
+                  <p className="text-sm text-gray-400 mb-4">
+                    Upload different versions of your video for comparison
+                  </p>
+                  <Button
+                    onClick={() => {
+                      setShowVersionsViewModal(false);
+                      setShowVersionModal(true);
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Upload First Version
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Shorts View Modal */}
+      {showShortsViewModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-xl font-semibold text-gray-900">Shorts ({video.shorts?.length || 0})</h3>
+              <div className="flex items-center space-x-2">
+                <Button
+                  onClick={() => setShowShortsModal(true)}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Upload Short
+                </Button>
+                <button
+                  onClick={() => setShowShortsViewModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+            </div>
+            <div className="p-6">
+              {video.shorts && video.shorts.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {video.shorts.map((short: any) => (
+                    <div key={short.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                      <div className="aspect-video bg-gray-900 flex items-center justify-center">
+                        <video 
+                          src={short.url} 
+                          className="w-full h-full object-cover" 
+                          muted 
+                          poster={short.thumbnail}
+                        />
+                      </div>
+                      <div className="p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-gray-900 truncate">
+                            {short.filename}
+                          </span>
+                          <button
+                            onClick={() => handleShortVote(short.id)}
+                            className="flex items-center space-x-1 text-gray-600 hover:text-red-500"
+                          >
+                            <Heart className={`h-3 w-3 ${
+                              short.votes.some((vote: any) => vote.userId === session?.user?.email) 
+                                ? 'fill-red-500 text-red-500' 
+                                : 'text-gray-400'
+                            }`} />
+                            <span className="text-xs">{short.votes?.length || 0}</span>
+                          </button>
+                        </div>
+                        {short.description && (
+                          <p className="text-xs text-gray-600 mt-1 truncate">{short.description}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <Video className="h-16 w-16 mx-auto text-gray-300 mb-4" />
+                  <p className="text-gray-500 text-lg">No shorts yet</p>
+                  <p className="text-sm text-gray-400 mb-4">
+                    Upload short video clips for team voting
+                  </p>
+                  <Button
+                    onClick={() => {
+                      setShowShortsViewModal(false);
+                      setShowShortsModal(true);
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Upload First Short
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </div>

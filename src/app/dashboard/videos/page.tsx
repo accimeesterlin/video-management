@@ -69,6 +69,8 @@ export default function VideosPage() {
   const [uploadStatus, setUploadStatus] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [uploadMode, setUploadMode] = useState<'file' | 'link'>('file');
+  const [videoLink, setVideoLink] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
   const [sharingVideo, setSharingVideo] = useState<VideoItem | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -113,13 +115,25 @@ export default function VideosPage() {
       if (response.ok) {
         const data = await response.json();
         setProjects(data);
+        console.log('Fetched projects:', data);
         // Set first project as default if none selected
         if (data.length > 0 && !formData.project) {
           setFormData(prev => ({ ...prev, project: data[0].name }));
         }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Failed to fetch projects:", response.status, errorData);
+        if (response.status === 401) {
+          toast.error("Please log in to view projects");
+        } else if (response.status === 404) {
+          toast.error("No projects found. Create your first project!");
+        } else {
+          toast.error("Failed to load projects");
+        }
       }
     } catch (error) {
       console.error("Error fetching projects:", error);
+      toast.error("Error loading projects. Please check your connection.");
     }
   };
 
@@ -132,6 +146,84 @@ export default function VideosPage() {
       }
     } catch (error) {
       console.error("Error fetching tags:", error);
+    }
+  };
+
+  const openUploadModal = async () => {
+    setShowUploadModal(true);
+    // Refresh projects when opening upload modal
+    await fetchProjects();
+  };
+
+  const handleVideoLinkSubmit = async () => {
+    if (!videoLink.trim()) {
+      toast.error("Please enter a video URL");
+      return;
+    }
+
+    if (!formData.title.trim()) {
+      toast.error("Please enter a video title");
+      return;
+    }
+
+    setUploading(true);
+    setUploadStatus("Adding video link...");
+
+    try {
+      const allTags = selectedTags.length > 0 
+        ? selectedTags.join(", ") + (formData.tags ? ", " + formData.tags : "")
+        : formData.tags;
+
+      const response = await fetch("/api/videos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: videoLink.trim(),
+          title: formData.title.trim(),
+          description: formData.description,
+          project: formData.project || "General",
+          tags: allTags,
+          isExternalLink: true,
+          platform: getVideoPlatform(videoLink),
+        }),
+      });
+
+      if (response.ok) {
+        const newVideo = await response.json();
+        setVideos((prev) => [newVideo, ...prev]);
+        toast.success("Video link added successfully");
+        
+        // Reset form
+        setVideoLink('');
+        setFormData({
+          title: "",
+          description: "",
+          project: "",
+          tags: "",
+        });
+        setSelectedTags([]);
+        setShowUploadModal(false);
+      } else {
+        const error = await response.json();
+        toast.error(error.error || "Failed to add video link");
+      }
+    } catch (error) {
+      toast.error("Error adding video link");
+    } finally {
+      setUploading(false);
+      setUploadStatus("");
+    }
+  };
+
+  const getVideoPlatform = (url: string): string => {
+    if (url.includes('youtube.com') || url.includes('youtu.be')) {
+      return 'youtube';
+    } else if (url.includes('vimeo.com')) {
+      return 'vimeo';
+    } else if (url.includes('dailymotion.com')) {
+      return 'dailymotion';
+    } else {
+      return 'other';
     }
   };
 
@@ -494,7 +586,7 @@ export default function VideosPage() {
           </p>
         </div>
         <Button
-          onClick={() => setShowUploadModal(true)}
+          onClick={openUploadModal}
           className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium shadow-sm"
         >
           <Upload className="h-5 w-5 mr-2" />
@@ -577,7 +669,7 @@ export default function VideosPage() {
               Upload your first video to get started
             </p>
             <Button
-              onClick={() => setShowUploadModal(true)}
+              onClick={openUploadModal}
               className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium"
             >
               <Upload className="h-5 w-5 mr-2" />
@@ -640,11 +732,15 @@ export default function VideosPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     {editingVideoInline === video._id ? (
-                      <div className="space-y-2">
+                      <div 
+                        className="space-y-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <input
                           type="text"
                           value={quickEditData.title || ''}
                           onChange={(e) => setQuickEditData(prev => ({ ...prev, title: e.target.value }))}
+                          onClick={(e) => e.stopPropagation()}
                           className="w-full px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                           placeholder="Video title"
                         />
@@ -652,6 +748,7 @@ export default function VideosPage() {
                           type="text"
                           value={quickEditData.project || ''}
                           onChange={(e) => setQuickEditData(prev => ({ ...prev, project: e.target.value }))}
+                          onClick={(e) => e.stopPropagation()}
                           className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                           placeholder="Project name"
                         />
@@ -659,6 +756,7 @@ export default function VideosPage() {
                           type="text"
                           value={quickEditData.tags || ''}
                           onChange={(e) => setQuickEditData(prev => ({ ...prev, tags: e.target.value }))}
+                          onClick={(e) => e.stopPropagation()}
                           className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                           placeholder="Tags (comma separated)"
                         />
@@ -811,12 +909,14 @@ export default function VideosPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">
-                Upload Videos
+                Add Video
               </h3>
               <button
                 onClick={() => {
                   setShowUploadModal(false);
                   resetForm();
+                  setUploadMode('file');
+                  setVideoLink('');
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -825,6 +925,32 @@ export default function VideosPage() {
             </div>
 
             <div className="p-6 space-y-6">
+              {/* Mode Switcher */}
+              <div className="flex bg-gray-100 rounded-lg p-1">
+                <button
+                  onClick={() => setUploadMode('file')}
+                  className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-colors ${
+                    uploadMode === 'file'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Upload Files
+                </button>
+                <button
+                  onClick={() => setUploadMode('link')}
+                  className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-colors ${
+                    uploadMode === 'link'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  Add Link
+                </button>
+              </div>
+
+              {uploadMode === 'file' && (
+              <div className="space-y-6">
               {/* Dropzone */}
               <div
                 {...getRootProps()}
@@ -1018,6 +1144,66 @@ export default function VideosPage() {
                 </div>
               </div>
             </div>
+              )}
+
+              {uploadMode === 'link' && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Video URL
+                    </label>
+                    <input
+                      type="url"
+                      value={videoLink}
+                      onChange={(e) => setVideoLink(e.target.value)}
+                      disabled={uploading}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50"
+                      placeholder="https://www.youtube.com/watch?v=..."
+                    />
+                    <p className="text-sm text-gray-500 mt-1">
+                      Supports YouTube, Vimeo, and other public video URLs
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Title (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.title}
+                      onChange={(e) =>
+                        setFormData({ ...formData, title: e.target.value })
+                      }
+                      disabled={uploading}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50"
+                      placeholder="Enter video title"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Project
+                    </label>
+                    <select
+                      value={formData.project}
+                      onChange={(e) =>
+                        setFormData({ ...formData, project: e.target.value })
+                      }
+                      disabled={uploading}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50"
+                    >
+                      <option value="">Select project (optional)</option>
+                      {projects.map((project) => (
+                        <option key={project._id} value={project.name}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="flex space-x-3 p-6 border-t border-gray-100">
               <Button
@@ -1032,19 +1218,28 @@ export default function VideosPage() {
                 Cancel
               </Button>
               <Button
-                onClick={handleUpload}
-                disabled={uploading || selectedFiles.length === 0}
+                onClick={uploadMode === 'file' ? handleUpload : handleVideoLinkSubmit}
+                disabled={uploading || (uploadMode === 'file' ? selectedFiles.length === 0 : !videoLink.trim())}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {uploading ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Uploading...
+                    {uploadMode === 'file' ? 'Uploading...' : 'Adding...'}
                   </>
                 ) : (
                   <>
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload {selectedFiles.length > 0 ? `${selectedFiles.length} ` : ""}Videos
+                    {uploadMode === 'file' ? (
+                      <>
+                        <Upload className="h-4 w-4 mr-2" />
+                        Upload {selectedFiles.length > 0 ? selectedFiles.length + " " : ""}Videos
+                      </>
+                    ) : (
+                      <>
+                        <Link className="h-4 w-4 mr-2" />
+                        Add Video Link
+                      </>
+                    )}
                   </>
                 )}
               </Button>

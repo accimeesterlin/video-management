@@ -34,6 +34,12 @@ async function dbConnect() {
   if (!cached!.promise) {
     const opts = {
       bufferCommands: false,
+      serverSelectionTimeoutMS: 30000, // 30 seconds
+      socketTimeoutMS: 45000, // 45 seconds
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      maxIdleTimeMS: 30000,
+      connectTimeoutMS: 30000,
     };
 
     cached!.promise = mongoose.connect(MONGODB_URI, opts) as any;
@@ -59,7 +65,14 @@ async function getMongoClient() {
   }
 
   if (!mongoClientPromise) {
-    mongoClientPromise = MongoClient.connect(MONGODB_URI);
+    mongoClientPromise = MongoClient.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 30000,
+      socketTimeoutMS: 45000,
+      connectTimeoutMS: 30000,
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      maxIdleTimeMS: 30000,
+    });
   }
 
   try {

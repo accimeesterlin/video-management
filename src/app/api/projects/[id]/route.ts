@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import dbConnect from "@/lib/mongodb";
 import Project from "@/models/Project";
 import User from "@/models/User";
+import { ObjectId } from "mongodb";
 
 export async function PUT(
   request: NextRequest,
@@ -15,7 +16,7 @@ export async function PUT(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { name, description } = await request.json();
+    const { name, description, status, progress, startDate, endDate, team } = await request.json();
 
     if (!name || !name.trim()) {
       return NextResponse.json(
@@ -27,6 +28,11 @@ export async function PUT(
     await dbConnect();
 
     const { id } = await params;
+
+    // Validate ObjectId format
+    if (!ObjectId.isValid(id)) {
+      return NextResponse.json({ error: "Invalid project ID" }, { status: 400 });
+    }
 
     // Get current user
     const user = await User.findOne({ email: session.user.email });
@@ -49,16 +55,42 @@ export async function PUT(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
+    // Build update object
+    const updateData: any = {
+      name: name.trim(),
+      description: description || "",
+      updatedAt: new Date(),
+    };
+
+    // Add optional fields if provided
+    if (status && ["Active", "On Hold", "Completed", "Cancelled"].includes(status)) {
+      updateData.status = status;
+    }
+    
+    if (typeof progress === 'number' && progress >= 0 && progress <= 100) {
+      updateData.progress = progress;
+    }
+    
+    if (startDate) {
+      updateData.startDate = new Date(startDate);
+    }
+    
+    if (endDate) {
+      updateData.endDate = new Date(endDate);
+    }
+    
+    if (Array.isArray(team)) {
+      // Convert team member names to user IDs if needed
+      // For now, just store the names as provided
+      updateData.team = team;
+    }
+
     // Update the project
     const updatedProject = await Project.findByIdAndUpdate(
       id,
-      {
-        name: name.trim(),
-        description: description || "",
-        updatedAt: new Date(),
-      },
+      updateData,
       { new: true }
-    );
+    ).populate("team", "name email");
 
     return NextResponse.json(updatedProject);
   } catch (error) {
@@ -83,6 +115,11 @@ export async function DELETE(
     await dbConnect();
 
     const { id } = await params;
+
+    // Validate ObjectId format
+    if (!ObjectId.isValid(id)) {
+      return NextResponse.json({ error: "Invalid project ID" }, { status: 400 });
+    }
 
     // Get current user
     const user = await User.findOne({ email: session.user.email });

@@ -14,6 +14,7 @@ import {
   LogOut,
   Tag,
   Zap,
+  X,
 } from "lucide-react";
 
 const navigation = [
@@ -28,13 +29,38 @@ const navigation = [
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
+}
+
+export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
   const pathname = usePathname();
 
   return (
-    <div className="flex flex-col w-64 bg-white shadow-sm border-r border-gray-100 h-screen fixed left-0 top-0">
-      <div className="flex items-center justify-center h-16 px-4 border-b border-gray-100">
-        <h1 className="text-xl font-bold text-gray-900">Video Management</h1>
+    <>
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        >
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-75" />
+        </div>
+      )}
+
+      {/* Sidebar */}
+      <div className={`flex flex-col w-64 bg-white shadow-sm border-r border-gray-100 h-screen fixed left-0 top-0 z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}>
+      <div className="flex items-center justify-between h-16 px-4 border-b border-gray-100">
+        <h1 className="text-lg lg:text-xl font-bold text-gray-900">Video Management</h1>
+        <button
+          className="lg:hidden p-2 rounded-md text-gray-400 hover:text-gray-600"
+          onClick={() => setSidebarOpen(false)}
+        >
+          <X className="h-5 w-5" />
+        </button>
       </div>
 
       <nav className="flex-1 px-4 py-6 space-y-2">
@@ -71,5 +97,6 @@ export default function Sidebar() {
         </button>
       </div>
     </div>
+    </>
   );
 }

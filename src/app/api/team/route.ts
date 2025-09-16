@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import Company from "@/models/Company";
 import User from "@/models/User";
 import { connectToDatabase } from "@/lib/mongodb";
+import { ObjectId } from "mongodb";
 
 export async function GET() {
   try {
@@ -14,11 +15,17 @@ export async function GET() {
 
     await connectToDatabase();
 
-    // Get all companies where the user is a member
+    // Get user by email first
+    const user = await User.findOne({ email: session.user?.email });
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Get all companies where the user is a member (using ObjectId)
     const companies = await Company.find({
       $or: [
-        { ownerId: session.user?.email },
-        { "members.userId": session.user?.email },
+        { ownerId: user._id },
+        { "members.userId": user._id },
       ],
     }).populate("members.userId", "name email");
 
@@ -91,6 +98,14 @@ export async function POST(request: NextRequest) {
     if (!email || !name || !companyId) {
       return NextResponse.json(
         { message: "Email, name, and company ID are required" },
+        { status: 400 }
+      );
+    }
+
+    // Validate ObjectId format
+    if (!ObjectId.isValid(companyId)) {
+      return NextResponse.json(
+        { message: "Invalid company ID" },
         { status: 400 }
       );
     }

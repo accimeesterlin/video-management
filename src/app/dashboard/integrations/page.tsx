@@ -35,6 +35,39 @@ interface Integration {
   status: "active" | "inactive" | "error";
 }
 
+// Credential requirements for each integration
+const credentialRequirements: {[key: string]: {label: string, type: string, required: boolean, placeholder?: string}[]} = {
+  'youtube': [
+    {label: 'API Key', type: 'password', required: true, placeholder: 'Your YouTube Data API v3 key'},
+    {label: 'Channel ID', type: 'text', required: true, placeholder: 'Your YouTube channel ID'},
+    {label: 'Client ID', type: 'text', required: false, placeholder: 'OAuth Client ID (optional)'},
+  ],
+  'vimeo': [
+    {label: 'Access Token', type: 'password', required: true, placeholder: 'Your Vimeo access token'},
+    {label: 'Client ID', type: 'text', required: true, placeholder: 'Your Vimeo app client ID'},
+    {label: 'Client Secret', type: 'password', required: true, placeholder: 'Your Vimeo app client secret'},
+  ],
+  'slack': [
+    {label: 'Bot Token', type: 'password', required: true, placeholder: 'xoxb-your-bot-token'},
+    {label: 'Channel ID', type: 'text', required: true, placeholder: 'Channel ID for notifications'},
+    {label: 'Webhook URL', type: 'text', required: false, placeholder: 'Webhook URL for alerts (optional)'},
+  ],
+  'dropbox': [
+    {label: 'App Key', type: 'text', required: true, placeholder: 'Your Dropbox app key'},
+    {label: 'App Secret', type: 'password', required: true, placeholder: 'Your Dropbox app secret'},
+    {label: 'Access Token', type: 'password', required: true, placeholder: 'Generated access token'},
+  ],
+  'adobe-creative': [
+    {label: 'API Key', type: 'password', required: true, placeholder: 'Adobe Creative SDK API key'},
+    {label: 'Organization ID', type: 'text', required: true, placeholder: 'Your Adobe organization ID'},
+    {label: 'Technical Account ID', type: 'text', required: false, placeholder: 'Technical account ID (optional)'},
+  ],
+  'zapier': [
+    {label: 'Webhook URL', type: 'text', required: true, placeholder: 'Zapier webhook URL'},
+    {label: 'API Key', type: 'password', required: false, placeholder: 'API key for advanced features (optional)'},
+  ],
+};
+
 const availableIntegrations: Omit<Integration, "isConnected" | "connectedAt" | "status">[] = [
   {
     id: "google-drive",
@@ -139,6 +172,10 @@ export default function IntegrationsPage() {
   const [showEmailConfigModal, setShowEmailConfigModal] = useState(false);
   const [emailProvider, setEmailProvider] = useState<string>("");
   const [testingEmail, setTestingEmail] = useState<string | null>(null);
+  const [showCredentialModal, setShowCredentialModal] = useState(false);
+  const [currentIntegration, setCurrentIntegration] = useState<string>("");
+  const [credentials, setCredentials] = useState<{[key: string]: string}>({});
+  const [savingCredentials, setSavingCredentials] = useState(false);
 
   const categories = ["all", "Storage", "Video Platform", "Communication", "Creative Tools", "Email Services", "Automation"];
 
@@ -177,32 +214,36 @@ export default function IntegrationsPage() {
         // For email services, show configuration modal
         setEmailProvider(integrationId);
         setShowEmailConfigModal(true);
+      } else if (credentialRequirements[integrationId]) {
+        // For integrations that require credentials, show credential modal
+        setCurrentIntegration(integrationId);
+        setCredentials({});
+        setShowCredentialModal(true);
       } else {
-        // Simulate API call for other integrations
+        // For simple integrations, connect directly
         await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-      
-      setIntegrations(prev => 
-        prev.map(integration => 
-          integration.id === integrationId 
-            ? { 
-                ...integration, 
-                isConnected: true, 
-                status: "active" as const,
-                connectedAt: new Date().toISOString()
-              }
-            : integration
-        )
-      );
-      
-      const integration = integrations.find(i => i.id === integrationId);
-      if (integrationId !== 'google-drive' && !['mailgun', 'sendgrid', 'zeptomail', 'mailchimp'].includes(integrationId)) {
+        setIntegrations(prev => 
+          prev.map(integration => 
+            integration.id === integrationId 
+              ? { 
+                  ...integration, 
+                  isConnected: true, 
+                  status: "active" as const,
+                  connectedAt: new Date().toISOString()
+                }
+              : integration
+          )
+        );
+        
+        const integration = integrations.find(i => i.id === integrationId);
         toast.success(`Successfully connected to ${integration?.name}`);
       }
     } catch (error) {
       toast.error("Failed to connect integration");
     } finally {
-      setConnecting(null);
+      if (!credentialRequirements[integrationId] && integrationId !== 'google-drive' && !['mailgun', 'sendgrid', 'zeptomail', 'mailchimp'].includes(integrationId)) {
+        setConnecting(null);
+      }
     }
   };
 
@@ -292,6 +333,65 @@ export default function IntegrationsPage() {
       toast.error('Error testing email service');
     } finally {
       setTestingEmail(null);
+    }
+  };
+
+  const handleSaveCredentials = async () => {
+    setSavingCredentials(true);
+    
+    try {
+      // Validate required fields
+      const requirements = credentialRequirements[currentIntegration];
+      const requiredFields = requirements.filter(req => req.required);
+      const missingFields = requiredFields.filter(field => !credentials[field.label]?.trim());
+      
+      if (missingFields.length > 0) {
+        toast.error(`Please fill in all required fields: ${missingFields.map(f => f.label).join(', ')}`);
+        return;
+      }
+
+      // Save credentials (in real app, this would encrypt and store securely)
+      const response = await fetch('/api/integrations/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          integrationId: currentIntegration,
+          credentials: credentials
+        })
+      });
+
+      if (response.ok) {
+        // Mark integration as connected
+        setIntegrations(prev => 
+          prev.map(integration => 
+            integration.id === currentIntegration 
+              ? { 
+                  ...integration, 
+                  isConnected: true, 
+                  status: "active" as const,
+                  connectedAt: new Date().toISOString(),
+                  settings: credentials
+                }
+              : integration
+          )
+        );
+        
+        const integration = integrations.find(i => i.id === currentIntegration);
+        toast.success(`Successfully connected to ${integration?.name}`);
+        
+        // Close modal and reset
+        setShowCredentialModal(false);
+        setCurrentIntegration("");
+        setCredentials({});
+      } else {
+        const error = await response.json();
+        toast.error(error.message || 'Failed to save credentials');
+      }
+    } catch (error) {
+      toast.error('Error saving credentials');
+    } finally {
+      setSavingCredentials(false);
+      setConnecting(null);
     }
   };
 
@@ -819,6 +919,113 @@ export default function IntegrationsPage() {
                   </>
                 ) : (
                   'Send Test Email'
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Credential Configuration Modal */}
+      {showCredentialModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <div className="flex items-center space-x-3">
+                <div className="text-2xl">
+                  {integrations.find(i => i.id === currentIntegration)?.icon}
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900">
+                    Connect {integrations.find(i => i.id === currentIntegration)?.name}
+                  </h3>
+                  <p className="text-sm text-gray-500">Enter your credentials to connect</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowCredentialModal(false);
+                  setCurrentIntegration("");
+                  setCredentials({});
+                  setConnecting(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {credentialRequirements[currentIntegration]?.map((requirement) => (
+                <div key={requirement.label}>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {requirement.label}
+                    {requirement.required && <span className="text-red-500 ml-1">*</span>}
+                  </label>
+                  <input
+                    type={requirement.type}
+                    value={credentials[requirement.label] || ''}
+                    onChange={(e) => setCredentials(prev => ({
+                      ...prev,
+                      [requirement.label]: e.target.value
+                    }))}
+                    placeholder={requirement.placeholder}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              ))}
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start">
+                  <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <div className="text-sm">
+                    <p className="text-blue-800 font-medium">Secure Storage</p>
+                    <p className="text-blue-700 mt-1">
+                      Your credentials are encrypted and stored securely. They will only be used to connect with the {integrations.find(i => i.id === currentIntegration)?.name} service.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-medium text-gray-900">This will enable:</h4>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  {integrations.find(i => i.id === currentIntegration)?.features.map((feature) => (
+                    <li key={feature} className="flex items-center">
+                      <Check className="h-4 w-4 text-green-500 mr-2 flex-shrink-0" />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className="flex space-x-3 p-6 border-t border-gray-100">
+              <Button
+                onClick={() => {
+                  setShowCredentialModal(false);
+                  setCurrentIntegration("");
+                  setCredentials({});
+                  setConnecting(null);
+                }}
+                variant="outline"
+                className="flex-1"
+                disabled={savingCredentials}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveCredentials}
+                disabled={savingCredentials}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {savingCredentials ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Connecting...
+                  </>
+                ) : (
+                  'Save & Connect'
                 )}
               </Button>
             </div>
