@@ -394,7 +394,7 @@ export default function SettingsPage() {
               {/* Avatar Section */}
               <div className="flex flex-col sm:flex-row items-center sm:items-start space-y-4 sm:space-y-0 sm:space-x-6">
                 <div className="relative">
-                  {profileData.avatar && profileData.avatar !== "/api/placeholder/96/96" ? (
+                  {profileData.avatar && !profileData.avatar.includes("placeholder") && !profileData.avatar.includes("via.placeholder") ? (
                     <img
                       src={profileData.avatar}
                       alt={profileData.name}

@@ -26,6 +26,7 @@ import {
   Edit,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
@@ -50,6 +51,8 @@ interface VideoItem {
   url?: string;
   tags: string[];
   isPublic?: boolean;
+  isExternalLink?: boolean;
+  platform?: string | null;
   comments: Array<{
     id: string;
     text: string;

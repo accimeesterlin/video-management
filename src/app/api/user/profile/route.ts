@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/mongodb";
+import { getSignedS3ObjectUrl, getS3VideoUrl } from "@/lib/s3";
 
 export async function PUT(request: NextRequest) {
   try {
@@ -49,6 +50,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    // Generate signed URL for avatar if it exists
+    let avatarUrl = `https://via.placeholder.com/100x100/3B82F6/FFFFFF?text=${user.name?.charAt(0) || 'U'}`;
+    if (user.avatar) {
+      try {
+        avatarUrl = await getSignedS3ObjectUrl(user.avatar);
+      } catch (error) {
+        console.error("Failed to generate signed URL for avatar:", error);
+        // Fallback to unsigned URL
+        avatarUrl = getS3VideoUrl(user.avatar);
+      }
+    }
+
     return NextResponse.json({
       name: user.name,
       email: user.email,
@@ -56,7 +69,7 @@ export async function GET(request: NextRequest) {
       phone: user.phone || "",
       location: user.location || "",
       bio: user.bio || "",
-      avatar: user.avatar || `https://via.placeholder.com/100x100/3B82F6/FFFFFF?text=${user.name?.charAt(0) || 'U'}`
+      avatar: avatarUrl
     });
   } catch (error) {
     console.error("Profile fetch error:", error);
