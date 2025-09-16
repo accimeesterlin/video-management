@@ -7,7 +7,7 @@ import { deleteS3Object, inferS3KeyFromUrl } from "@/lib/s3";
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string; resourceId: string }> }
+  { params }: { params: Promise<{ id: string; shortId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -16,22 +16,14 @@ export async function DELETE(
     }
 
     const { db } = await connectToDatabase();
+    const { id, shortId } = await params;
 
-    const { id, resourceId } = await params;
-
-    // Get user
-    const user = await db
-      .collection("users")
-      .findOne({ email: session.user.email });
+    const user = await db.collection("users").findOne({ email: session.user.email });
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Verify video exists and user has access
-    const video = await db.collection("videos").findOne({
-      _id: new ObjectId(id),
-    });
-
+    const video = await db.collection("videos").findOne({ _id: new ObjectId(id) });
     if (!video) {
       return NextResponse.json({ error: "Video not found" }, { status: 404 });
     }
@@ -46,38 +38,31 @@ export async function DELETE(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    const resource = (video.resources || []).find(
-      (item: any) => item.id === resourceId
-    );
-
-    if (!resource) {
-      return NextResponse.json({ error: "Resource not found" }, { status: 404 });
+    const short = (video.shorts || []).find((item: any) => item.id === shortId);
+    if (!short) {
+      return NextResponse.json({ error: "Short not found" }, { status: 404 });
     }
 
-    const resourceKey = resource.s3Key || inferS3KeyFromUrl(resource.url);
-
-    if (resourceKey) {
+    const shortKey = short.s3Key || inferS3KeyFromUrl(short.url);
+    if (shortKey) {
       try {
-        await deleteS3Object(resourceKey);
+        await deleteS3Object(shortKey);
       } catch (s3Error) {
-        console.error("Failed to delete resource from S3", resourceKey, s3Error);
+        console.error("Failed to delete short from S3", shortKey, s3Error);
       }
     }
 
-    // Remove resource from video
     await db.collection("videos").updateOne(
       { _id: new ObjectId(id) },
       {
-        $pull: { resources: { id: resourceId } as any },
+        $pull: { shorts: { id: shortId } as any },
         $set: { updatedAt: new Date() },
       }
     );
 
-    return NextResponse.json({
-      message: "Resource deleted successfully",
-    });
+    return NextResponse.json({ message: "Short deleted successfully" });
   } catch (error) {
-    console.error("Resource deletion error:", error);
+    console.error("Short deletion error:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

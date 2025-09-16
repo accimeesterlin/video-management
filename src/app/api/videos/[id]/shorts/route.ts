@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { generatePresignedUrl, getS3VideoUrl, getSignedS3ObjectUrl } from "@/lib/s3";
 
 export async function POST(
   request: NextRequest,
@@ -15,12 +16,21 @@ export async function POST(
     }
 
     const { db } = await connectToDatabase();
-    const { videoKey, filename, description, size } = await request.json();
+    const formData = await request.formData();
+    const shortFile = formData.get("short") as File;
+    const description = formData.get("description") as string;
     const { id } = await params;
 
-    if (!videoKey || !filename) {
+    if (!shortFile) {
       return NextResponse.json(
-        { error: "Video key and filename are required" },
+        { error: "Short video file is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!shortFile.type.startsWith('video/')) {
+      return NextResponse.json(
+        { error: "Please upload a video file" },
         { status: 400 }
       );
     }
@@ -52,19 +62,45 @@ export async function POST(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    // Create S3 URL (this would be constructed based on your bucket setup)
-    const s3Url = `https://your-bucket.s3.amazonaws.com/${videoKey}`;
+    // Upload file to S3
+    const timestamp = Date.now();
+    const sanitizedName = shortFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const shortKey = `shorts/${id}/${timestamp}_${sanitizedName}`;
+    
+    // Get presigned URL for upload
+    const contentType = shortFile.type || "video/mp4";
+    const uploadUrl = await generatePresignedUrl(shortKey, contentType);
+
+    // Upload file to S3
+    const fileBuffer = Buffer.from(await shortFile.arrayBuffer());
+    const uploadResponse = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: fileBuffer,
+    });
+
+    if (!uploadResponse.ok) {
+      return NextResponse.json(
+        { error: "Failed to upload short video file" },
+        { status: 500 }
+      );
+    }
+
+    // Get the S3 URL for the short
+    const shortUrl = getS3VideoUrl(shortKey);
+    const signedShortUrl = await getSignedS3ObjectUrl(shortKey);
 
     const short = {
       id: new ObjectId().toString(),
-      url: s3Url,
-      filename,
+      url: shortUrl,
+      s3Key: shortKey,
+      filename: shortFile.name,
       uploadedBy: user._id.toString(),
       uploadedByName: user.name || user.email,
       uploadedAt: new Date().toISOString(),
       description: description || "",
       duration: 0, // Would be populated by video processing
-      size: size || 0,
+      size: shortFile.size,
       votes: [], // Empty votes array
     };
 
@@ -78,8 +114,11 @@ export async function POST(
     );
 
     return NextResponse.json({
-      message: "Short created successfully",
-      short,
+      message: "Short uploaded successfully",
+      short: {
+        ...short,
+        url: signedShortUrl,
+      },
     });
   } catch (error) {
     console.error("Short creation error:", error);

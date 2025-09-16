@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { generatePresignedUrl, getS3VideoUrl, getSignedS3ObjectUrl } from "@/lib/s3";
 
 export async function POST(
   request: NextRequest,
@@ -15,11 +16,14 @@ export async function POST(
     }
 
     const { db } = await connectToDatabase();
-    const { name, type, url, description } = await request.json();
+    const formData = await request.formData();
+    const resourceFile = formData.get("resource") as File;
+    const name = formData.get("name") as string;
+    const description = formData.get("description") as string;
 
-    if (!name || !type || !url) {
+    if (!resourceFile || !name) {
       return NextResponse.json(
-        { error: "Name, type, and URL are required" },
+        { error: "Resource file and name are required" },
         { status: 400 }
       );
     }
@@ -53,11 +57,42 @@ export async function POST(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
+    // Upload file to S3
+    const timestamp = Date.now();
+    const sanitizedName = resourceFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const resourceKey = `resources/${id}/${timestamp}_${sanitizedName}`;
+    
+    // Get presigned URL for upload
+    const contentType = resourceFile.type || "application/octet-stream";
+    const uploadUrl = await generatePresignedUrl(resourceKey, contentType);
+
+    // Upload file to S3
+    const fileBuffer = Buffer.from(await resourceFile.arrayBuffer());
+    const uploadResponse = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: fileBuffer,
+    });
+
+    if (!uploadResponse.ok) {
+      return NextResponse.json(
+        { error: "Failed to upload resource file" },
+        { status: 500 }
+      );
+    }
+
+    // Get the S3 URL for the resource
+    const resourceUrl = getS3VideoUrl(resourceKey);
+    const signedResourceUrl = await getSignedS3ObjectUrl(resourceKey);
+
     const resource = {
       id: new ObjectId().toString(),
       name: name.trim(),
-      type,
-      url: url.trim(),
+      type: contentType,
+      url: resourceUrl,
+      s3Key: resourceKey,
+      filename: resourceFile.name,
+      size: resourceFile.size,
       description: description?.trim() || "",
       addedBy: user._id.toString(),
       addedByName: user.name || user.email,
@@ -74,8 +109,11 @@ export async function POST(
     );
 
     return NextResponse.json({
-      message: "Resource added successfully",
-      resource,
+      message: "Resource uploaded successfully",
+      resource: {
+        ...resource,
+        url: signedResourceUrl,
+      },
     });
   } catch (error) {
     console.error("Resource creation error:", error);

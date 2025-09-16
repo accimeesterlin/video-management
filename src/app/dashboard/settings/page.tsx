@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +13,7 @@ import {
   Save,
   Edit,
   Camera,
+  Upload,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
@@ -23,6 +24,8 @@ export default function SettingsPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [profileData, setProfileData] = useState({
     name: "",
@@ -231,6 +234,87 @@ export default function SettingsPage() {
     }
   };
 
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+
+    // Validate file size (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size must be less than 5MB');
+      return;
+    }
+
+    setUploadingAvatar(true);
+
+    try {
+      // Get presigned URL for S3 upload
+      const uploadUrlResponse = await fetch("/api/upload/avatar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: file.name,
+          contentType: file.type,
+          fileSize: file.size,
+        }),
+      });
+
+      if (!uploadUrlResponse.ok) {
+        const error = await uploadUrlResponse.json();
+        toast.error(error.error || "Failed to get upload URL");
+        return;
+      }
+
+      const { uploadUrl, avatarKey } = await uploadUrlResponse.json();
+
+      // Upload file to S3
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+
+      if (!uploadResponse.ok) {
+        toast.error("Failed to upload image");
+        return;
+      }
+
+      // Update user profile with new avatar
+      const updateResponse = await fetch("/api/user/avatar", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ avatarKey }),
+      });
+
+      if (updateResponse.ok) {
+        const data = await updateResponse.json();
+        setProfileData(prev => ({ ...prev, avatar: data.avatarUrl }));
+        toast.success("Profile picture updated successfully");
+      } else {
+        const error = await updateResponse.json();
+        toast.error(error.error || "Failed to update profile picture");
+      }
+    } catch (error) {
+      console.error("Avatar upload error:", error);
+      toast.error("Error uploading profile picture");
+    } finally {
+      setUploadingAvatar(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const triggerAvatarUpload = () => {
+    fileInputRef.current?.click();
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -240,9 +324,9 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 sm:space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
         <p className="text-gray-600 mt-2">
           Manage your account, company, and application preferences
         </p>
@@ -250,19 +334,20 @@ export default function SettingsPage() {
 
       {/* Settings Tabs */}
       <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
+        <nav className="-mb-px flex space-x-4 sm:space-x-8 overflow-x-auto">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              className={`py-2 px-1 border-b-2 font-medium text-sm whitespace-nowrap flex-shrink-0 ${
                 activeTab === tab.id
                   ? "border-blue-500 text-blue-600"
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
-              <tab.icon className="h-4 w-4 inline mr-2" />
-              {tab.label}
+              <tab.icon className="h-4 w-4 inline mr-1 sm:mr-2" />
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="sm:hidden">{tab.label.charAt(0)}</span>
             </button>
           ))}
         </nav>
@@ -307,36 +392,64 @@ export default function SettingsPage() {
           <CardContent>
             <div className="space-y-6">
               {/* Avatar Section */}
-              <div className="flex items-center space-x-6">
+              <div className="flex flex-col sm:flex-row items-center sm:items-start space-y-4 sm:space-y-0 sm:space-x-6">
                 <div className="relative">
                   {profileData.avatar && profileData.avatar !== "/api/placeholder/96/96" ? (
                     <img
                       src={profileData.avatar}
                       alt={profileData.name}
-                      className="w-24 h-24 rounded-full object-cover border-4 border-gray-100"
+                      className="w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover border-4 border-gray-100"
                     />
                   ) : (
-                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-2xl font-bold border-4 border-gray-100">
+                    <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xl sm:text-2xl font-bold border-4 border-gray-100">
                       {profileData.name ? profileData.name.charAt(0).toUpperCase() : 'U'}
                     </div>
                   )}
-                  {isEditing && (
-                    <button className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 shadow-lg">
-                      <Camera className="h-4 w-4" />
-                    </button>
-                  )}
+                  <button 
+                    onClick={triggerAvatarUpload}
+                    disabled={uploadingAvatar}
+                    className={`absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 shadow-lg transition-colors ${
+                      uploadingAvatar ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                    title="Change profile picture"
+                  >
+                    {uploadingAvatar ? (
+                      <div className="animate-spin rounded-full h-3 w-3 sm:h-4 sm:w-4 border-b-2 border-white"></div>
+                    ) : (
+                      <Camera className="h-3 w-3 sm:h-4 sm:w-4" />
+                    )}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarUpload}
+                    className="hidden"
+                  />
                 </div>
-                <div>
+                <div className="text-center sm:text-left">
                   <h3 className="text-lg font-medium text-gray-900">
                     {profileData.name || "User"}
                   </h3>
                   <p className="text-gray-500">{profileData.role}</p>
                   <p className="text-sm text-gray-400">{profileData.email}</p>
+                  {isEditing && (
+                    <Button
+                      onClick={triggerAvatarUpload}
+                      variant="outline"
+                      size="sm"
+                      disabled={uploadingAvatar}
+                      className="mt-2"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      {uploadingAvatar ? "Uploading..." : "Change Picture"}
+                    </Button>
+                  )}
                 </div>
               </div>
 
               {/* Profile Form */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Full Name
@@ -400,7 +513,7 @@ export default function SettingsPage() {
                   />
                 </div>
 
-                <div className="md:col-span-2">
+                <div className="sm:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Bio
                   </label>
@@ -427,7 +540,7 @@ export default function SettingsPage() {
             <CardTitle>Company Information</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Company Name
@@ -488,7 +601,7 @@ export default function SettingsPage() {
                 </select>
               </div>
 
-              <div className="md:col-span-2">
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Description
                 </label>
@@ -524,7 +637,7 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-2 sm:space-y-0">
                 <div>
                   <h4 className="font-medium text-gray-900">
                     Email Notifications
@@ -546,7 +659,7 @@ export default function SettingsPage() {
                 </label>
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-2 sm:space-y-0">
                 <div>
                   <h4 className="font-medium text-gray-900">
                     Push Notifications
@@ -568,7 +681,7 @@ export default function SettingsPage() {
                 </label>
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-2 sm:space-y-0">
                 <div>
                   <h4 className="font-medium text-gray-900">Project Updates</h4>
                   <p className="text-sm text-gray-500">
@@ -586,7 +699,7 @@ export default function SettingsPage() {
                 </label>
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-2 sm:space-y-0">
                 <div>
                   <h4 className="font-medium text-gray-900">Team Messages</h4>
                   <p className="text-sm text-gray-500">
@@ -604,7 +717,7 @@ export default function SettingsPage() {
                 </label>
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-2 sm:space-y-0">
                 <div>
                   <h4 className="font-medium text-gray-900">
                     Deadline Reminders
@@ -626,7 +739,7 @@ export default function SettingsPage() {
                 </label>
               </div>
 
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-2 sm:space-y-0">
                 <div>
                   <h4 className="font-medium text-gray-900">Weekly Reports</h4>
                   <p className="text-sm text-gray-500">
@@ -692,25 +805,25 @@ export default function SettingsPage() {
             <div className="space-y-6">
               <div>
                 <h4 className="font-medium text-gray-900 mb-4">Theme</h4>
-                <div className="flex space-x-4">
+                <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
                   <Button
                     onClick={() => handleAppearanceChange('theme', 'light')}
                     variant="outline"
-                    className={appearanceSettings.theme === 'light' ? "bg-blue-50 border-blue-200" : ""}
+                    className={`w-full sm:w-auto ${appearanceSettings.theme === 'light' ? "bg-blue-50 border-blue-200" : ""}`}
                   >
                     Light
                   </Button>
                   <Button 
                     onClick={() => handleAppearanceChange('theme', 'dark')}
                     variant="outline"
-                    className={appearanceSettings.theme === 'dark' ? "bg-blue-50 border-blue-200" : ""}
+                    className={`w-full sm:w-auto ${appearanceSettings.theme === 'dark' ? "bg-blue-50 border-blue-200" : ""}`}
                   >
                     Dark
                   </Button>
                   <Button 
                     onClick={() => handleAppearanceChange('theme', 'system')}
                     variant="outline"
-                    className={appearanceSettings.theme === 'system' ? "bg-blue-50 border-blue-200" : ""}
+                    className={`w-full sm:w-auto ${appearanceSettings.theme === 'system' ? "bg-blue-50 border-blue-200" : ""}`}
                   >
                     System
                   </Button>
@@ -722,7 +835,7 @@ export default function SettingsPage() {
                 <select 
                   value={appearanceSettings.language}
                   onChange={(e) => handleAppearanceChange('language', e.target.value)}
-                  className="px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full sm:w-auto px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="en">English</option>
                   <option value="es">Spanish</option>
@@ -736,7 +849,7 @@ export default function SettingsPage() {
                 <select 
                   value={appearanceSettings.timezone}
                   onChange={(e) => handleAppearanceChange('timezone', e.target.value)}
-                  className="px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full sm:w-auto px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="UTC-5">Eastern Time (UTC-5)</option>
                   <option value="UTC-6">Central Time (UTC-6)</option>

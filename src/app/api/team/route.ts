@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
         name,
         email,
         password: "temp_password", // This should be handled differently in real app
-        role: role || "EDITOR",
+        role: role || "MEMBER",
       });
       await user.save();
     }

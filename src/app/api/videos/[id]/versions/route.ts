@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { generatePresignedUrl, getS3VideoUrl, getSignedS3ObjectUrl } from "@/lib/s3";
 
 export async function POST(
   request: NextRequest,
@@ -15,12 +16,21 @@ export async function POST(
     }
 
     const { db } = await connectToDatabase();
-    const { videoKey, filename, description, size } = await request.json();
+    const formData = await request.formData();
+    const versionFile = formData.get("version") as File;
+    const description = formData.get("description") as string;
     const { id } = await params;
 
-    if (!videoKey || !filename) {
+    if (!versionFile) {
       return NextResponse.json(
-        { error: "Video key and filename are required" },
+        { error: "Version video file is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!versionFile.type.startsWith('video/')) {
+      return NextResponse.json(
+        { error: "Please upload a video file" },
         { status: 400 }
       );
     }
@@ -57,19 +67,45 @@ export async function POST(
       Math.max(max, v.versionNumber), 0) || 0;
     const versionNumber = maxVersion + 1;
 
-    // Create S3 URL (this would be constructed based on your bucket setup)
-    const s3Url = `https://your-bucket.s3.amazonaws.com/${videoKey}`;
+    // Upload file to S3
+    const timestamp = Date.now();
+    const sanitizedName = versionFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const versionKey = `versions/${id}/${timestamp}_v${versionNumber}_${sanitizedName}`;
+    
+    // Get presigned URL for upload
+    const contentType = versionFile.type || "video/mp4";
+    const uploadUrl = await generatePresignedUrl(versionKey, contentType);
+
+    // Upload file to S3
+    const fileBuffer = Buffer.from(await versionFile.arrayBuffer());
+    const uploadResponse = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: fileBuffer,
+    });
+
+    if (!uploadResponse.ok) {
+      return NextResponse.json(
+        { error: "Failed to upload version video file" },
+        { status: 500 }
+      );
+    }
+
+    // Get the S3 URL for the version
+    const versionUrl = getS3VideoUrl(versionKey);
+    const signedVersionUrl = await getSignedS3ObjectUrl(versionKey);
 
     const version = {
       id: new ObjectId().toString(),
       versionNumber,
-      url: s3Url,
-      filename,
+      url: versionUrl,
+      s3Key: versionKey,
+      filename: versionFile.name,
       uploadedBy: user._id.toString(),
       uploadedByName: user.name || user.email,
       uploadedAt: new Date().toISOString(),
       description: description || "",
-      size: size || 0,
+      size: versionFile.size,
       duration: 0, // Would be populated by video processing
       isActive: false, // New versions are not active by default
     };
@@ -84,8 +120,11 @@ export async function POST(
     );
 
     return NextResponse.json({
-      message: "Version created successfully",
-      version,
+      message: "Version uploaded successfully",
+      version: {
+        ...version,
+        url: signedVersionUrl,
+      },
     });
   } catch (error) {
     console.error("Version creation error:", error);

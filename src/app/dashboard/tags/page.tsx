@@ -12,8 +12,10 @@ import {
   Save,
   Hash,
   Search,
+  AlertTriangle,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 interface TagItem {
@@ -28,12 +30,15 @@ interface TagItem {
 
 export default function TagsPage() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [tags, setTags] = useState<TagItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTag, setEditingTag] = useState<TagItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingTag, setDeletingTag] = useState<TagItem | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     color: "#3B82F6",
@@ -138,19 +143,24 @@ export default function TagsPage() {
     }
   };
 
-  const handleDeleteTag = async (tagId: string) => {
-    if (!confirm("Are you sure you want to delete this tag? This will remove it from all videos.")) {
-      return;
-    }
+  const openDeleteModal = (tag: TagItem) => {
+    setDeletingTag(tag);
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteTag = async () => {
+    if (!deletingTag) return;
 
     try {
-      const response = await fetch(`/api/tags/${tagId}`, {
+      const response = await fetch(`/api/tags/${deletingTag._id}`, {
         method: "DELETE",
       });
 
       if (response.ok) {
         toast.success("Tag deleted successfully");
         fetchTags();
+        setShowDeleteModal(false);
+        setDeletingTag(null);
       } else {
         const error = await response.json();
         toast.error(error.message || "Failed to delete tag");
@@ -306,7 +316,7 @@ export default function TagsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDeleteTag(tag._id)}
+                        onClick={() => openDeleteModal(tag)}
                         className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-1 h-8 w-8"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -325,6 +335,19 @@ export default function TagsPage() {
                     <span>
                       Created {new Date(tag.createdAt).toLocaleDateString()}
                     </span>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        router.push(`/dashboard/videos?tag=${encodeURIComponent(tag.name)}`)
+                      }
+                      className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                    >
+                      View Videos
+                    </Button>
                   </div>
                 </div>
               </CardContent>
@@ -533,6 +556,75 @@ export default function TagsPage() {
               >
                 <Save className="h-4 w-4 mr-2" />
                 Save Changes
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && deletingTag && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-xl font-semibold text-gray-900">Delete Tag</h3>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeletingTag(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <div 
+                  className="w-8 h-8 rounded-full flex items-center justify-center"
+                  style={{ backgroundColor: deletingTag.color }}
+                >
+                  <Tag className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-900">{deletingTag.name}</h4>
+                  {deletingTag.description && (
+                    <p className="text-sm text-gray-500">{deletingTag.description}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <div className="flex">
+                  <AlertTriangle className="h-5 w-5 text-red-400 mt-0.5" />
+                  <div className="ml-3">
+                    <h4 className="text-sm font-medium text-red-800">Warning</h4>
+                    <p className="text-sm text-red-700 mt-1">
+                      This action cannot be undone. This tag will be removed from all videos that currently use it.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex space-x-3 p-6 border-t border-gray-100">
+              <Button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeletingTag(null);
+                }}
+                variant="outline"
+                className="flex-1 py-3"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleDeleteTag}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Tag
               </Button>
             </div>
           </div>

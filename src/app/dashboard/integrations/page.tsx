@@ -66,6 +66,26 @@ const credentialRequirements: {[key: string]: {label: string, type: string, requ
     {label: 'Webhook URL', type: 'text', required: true, placeholder: 'Zapier webhook URL'},
     {label: 'API Key', type: 'password', required: false, placeholder: 'API key for advanced features (optional)'},
   ],
+  'mailgun': [
+    {label: 'API Key', type: 'password', required: true, placeholder: 'Your Mailgun private API key'},
+    {label: 'Domain', type: 'text', required: true, placeholder: 'Your Mailgun domain (e.g., mg.example.com)'},
+    {label: 'Region', type: 'text', required: false, placeholder: 'Region (US or EU, default: US)'},
+  ],
+  'sendgrid': [
+    {label: 'API Key', type: 'password', required: true, placeholder: 'Your SendGrid API key'},
+    {label: 'From Email', type: 'email', required: true, placeholder: 'Verified sender email address'},
+    {label: 'From Name', type: 'text', required: false, placeholder: 'Sender name (optional)'},
+  ],
+  'zeptomail': [
+    {label: 'API Key', type: 'password', required: true, placeholder: 'Your ZeptoMail API key'},
+    {label: 'From Email', type: 'email', required: true, placeholder: 'Verified sender email address'},
+    {label: 'From Name', type: 'text', required: false, placeholder: 'Sender name (optional)'},
+  ],
+  'mailchimp': [
+    {label: 'API Key', type: 'password', required: true, placeholder: 'Your MailChimp API key'},
+    {label: 'Audience ID', type: 'text', required: true, placeholder: 'Your MailChimp audience/list ID'},
+    {label: 'Server Prefix', type: 'text', required: true, placeholder: 'Server prefix (e.g., us1, us2)'},
+  ],
 };
 
 const availableIntegrations: Omit<Integration, "isConnected" | "connectedAt" | "status">[] = [
@@ -210,10 +230,6 @@ export default function IntegrationsPage() {
         // For Google Drive, show the import modal instead of just connecting
         setShowGoogleDriveModal(true);
         await fetchGoogleDriveVideos();
-      } else if (['mailgun', 'sendgrid', 'zeptomail', 'mailchimp'].includes(integrationId)) {
-        // For email services, show configuration modal
-        setEmailProvider(integrationId);
-        setShowEmailConfigModal(true);
       } else if (credentialRequirements[integrationId]) {
         // For integrations that require credentials, show credential modal
         setCurrentIntegration(integrationId);
@@ -241,7 +257,7 @@ export default function IntegrationsPage() {
     } catch (error) {
       toast.error("Failed to connect integration");
     } finally {
-      if (!credentialRequirements[integrationId] && integrationId !== 'google-drive' && !['mailgun', 'sendgrid', 'zeptomail', 'mailchimp'].includes(integrationId)) {
+      if (!credentialRequirements[integrationId] && integrationId !== 'google-drive') {
         setConnecting(null);
       }
     }
@@ -612,12 +628,12 @@ export default function IntegrationsPage() {
                       </Button>
                     </>
                   ) : (
-                    <Button
-                      onClick={() => handleConnect(integration.id)}
-                      disabled={connecting === integration.id}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                      size="sm"
-                    >
+                  <Button
+                    onClick={() => handleConnect(integration.id)}
+                    disabled={connecting === integration.id}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4"
+                    size="sm"
+                  >
                       {connecting === integration.id ? (
                         <>
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
@@ -861,14 +877,14 @@ export default function IntegrationsPage() {
                   </p>
                 </div>
 
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <div className="flex items-start">
-                    <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5 mr-3 flex-shrink-0" />
+                    <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
                     <div className="text-sm">
-                      <p className="text-yellow-800 font-medium">Configuration Required</p>
-                      <p className="text-yellow-700 mt-1">
-                        Make sure you have configured your {integrations.find(i => i.id === emailProvider)?.name} API
-                        credentials in your environment variables before testing.
+                      <p className="text-blue-800 font-medium">First-time Setup</p>
+                      <p className="text-blue-700 mt-1">
+                        Please provide your {integrations.find(i => i.id === emailProvider)?.name} API credentials 
+                        below to connect your account. Your credentials are stored securely and used only for this integration.
                       </p>
                     </div>
                   </div>

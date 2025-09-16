@@ -47,12 +47,10 @@ export async function PUT(
     }
 
     // Update video sharing status
-    const newStatus = isPublic ? "public" : "private";
     await db.collection("videos").updateOne(
       { _id: new ObjectId(id) },
       {
         $set: {
-          status: newStatus,
           isPublic: isPublic,
           sharedAt: isPublic ? new Date() : null,
           updatedAt: new Date(),

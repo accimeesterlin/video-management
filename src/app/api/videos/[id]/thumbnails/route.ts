@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { generatePresignedUrl, getS3VideoUrl, getSignedS3ObjectUrl } from "@/lib/s3";
 
 export async function POST(
   request: NextRequest,
@@ -53,13 +54,40 @@ export async function POST(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    // In a real implementation, you would upload the file to S3 or similar storage
-    // For now, we'll simulate with a placeholder URL
-    const thumbnailUrl = `/api/placeholder/thumbnail/${Date.now()}.jpg`;
+    // Upload file to S3
+    const timestamp = Date.now();
+    const sanitizedName = thumbnailFile.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const thumbnailKey = `thumbnails/${id}/${timestamp}_${sanitizedName}`;
+    
+    // Get presigned URL for upload
+    const contentType = thumbnailFile.type || "image/jpeg";
+    const uploadUrl = await generatePresignedUrl(thumbnailKey, contentType);
+
+    // Upload file to S3
+    const fileBuffer = Buffer.from(await thumbnailFile.arrayBuffer());
+    const uploadResponse = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: fileBuffer,
+    });
+
+    if (!uploadResponse.ok) {
+      return NextResponse.json(
+        { error: "Failed to upload thumbnail file" },
+        { status: 500 }
+      );
+    }
+
+    // Get the S3 URL for the thumbnail
+    const baseThumbnailUrl = getS3VideoUrl(thumbnailKey);
+    const signedThumbnailUrl = await getSignedS3ObjectUrl(thumbnailKey);
 
     const thumbnail = {
       id: new ObjectId().toString(),
-      url: thumbnailUrl,
+      url: baseThumbnailUrl,
+      s3Key: thumbnailKey,
+      filename: thumbnailFile.name,
+      size: thumbnailFile.size,
       uploadedBy: user._id.toString(),
       uploadedByName: user.name || user.email,
       uploadedAt: new Date().toISOString(),
@@ -77,7 +105,10 @@ export async function POST(
 
     return NextResponse.json({
       message: "Thumbnail uploaded successfully",
-      thumbnail,
+      thumbnail: {
+        ...thumbnail,
+        url: signedThumbnailUrl,
+      },
     });
   } catch (error) {
     console.error("Thumbnail upload error:", error);

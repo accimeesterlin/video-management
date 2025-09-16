@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import dbConnect from "@/lib/mongodb";
 import Company from "@/models/Company";
+import User from "@/models/User";
 
 // GET - Fetch a specific company
 export async function GET(
@@ -12,13 +13,20 @@ export async function GET(
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session) {
+    if (!session?.user?.email) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
     await dbConnect();
 
     const { id } = await params;
+
+    // First get the user to find their ID
+    const user = await User.findOne({ email: session.user.email });
+    
+    if (!user) {
+      return NextResponse.json({ message: "User not found" }, { status: 404 });
+    }
 
     const company = await Company.findById(id).populate(
       "members.userId",
@@ -35,7 +43,7 @@ export async function GET(
     // Check if user is a member of this company
     const isMember = company.members.some(
       (member: { userId: { _id: { toString: () => string } } }) =>
-        member.userId._id.toString() === session.user?.email
+        member.userId._id.toString() === user._id.toString()
     );
 
     if (!isMember) {
@@ -89,10 +97,17 @@ export async function PUT(
       );
     }
 
+    // Get the user first
+    const user = await User.findOne({ email: session.user?.email });
+    
+    if (!user) {
+      return NextResponse.json({ message: "User not found" }, { status: 404 });
+    }
+
     // Check if user is the owner or admin
     const userMember = company.members.find(
       (member: { userId: { toString: () => string }; role: string }) =>
-        member.userId.toString() === session.user?.email
+        member.userId.toString() === user._id.toString()
     );
 
     if (!userMember || !["OWNER", "ADMIN"].includes(userMember.role)) {
@@ -151,10 +166,17 @@ export async function DELETE(
       );
     }
 
+    // Get the user first  
+    const user = await User.findOne({ email: session.user?.email });
+    
+    if (!user) {
+      return NextResponse.json({ message: "User not found" }, { status: 404 });
+    }
+
     // Check if user is the owner
     const userMember = company.members.find(
       (member: { userId: { toString: () => string }; role: string }) =>
-        member.userId.toString() === session.user?.email
+        member.userId.toString() === user._id.toString()
     );
 
     if (!userMember || userMember.role !== "OWNER") {

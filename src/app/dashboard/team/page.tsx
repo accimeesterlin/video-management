@@ -52,11 +52,13 @@ export default function TeamPage() {
     companyId: "",
   });
   const [companies, setCompanies] = useState<any[]>([]);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
     if (session) {
       fetchTeamMembers();
       fetchCompanies();
+      fetchCurrentUser();
     }
   }, [session]);
 
@@ -85,6 +87,18 @@ export default function TeamPage() {
       }
     } catch (error) {
       console.error("Error fetching companies:", error);
+    }
+  };
+
+  const fetchCurrentUser = async () => {
+    try {
+      const response = await fetch("/api/users/me");
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentUser(data);
+      }
+    } catch (error) {
+      console.error("Error fetching current user:", error);
     }
   };
 
@@ -205,7 +219,12 @@ export default function TeamPage() {
           </p>
         </div>
         <Button
-          onClick={() => setShowInviteModal(true)}
+          onClick={() => {
+            // Set default company from current user
+            const defaultCompanyId = currentUser?.companyId?.toString() || "";
+            setFormData(prev => ({ ...prev, companyId: defaultCompanyId }));
+            setShowInviteModal(true);
+          }}
           className="bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-3 rounded-lg font-medium shadow-sm w-full sm:w-auto"
         >
           <UserPlus className="h-5 w-5 mr-2" />
@@ -295,7 +314,12 @@ export default function TeamPage() {
               Start building your team by inviting the first member
             </p>
             <Button
-              onClick={() => setShowInviteModal(true)}
+              onClick={() => {
+                // Set default company from current user
+                const defaultCompanyId = currentUser?.companyId?.toString() || "";
+                setFormData(prev => ({ ...prev, companyId: defaultCompanyId }));
+                setShowInviteModal(true);
+              }}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-3 rounded-lg font-medium w-full sm:w-auto"
             >
               <UserPlus className="h-5 w-5 mr-2" />
@@ -476,8 +500,6 @@ export default function TeamPage() {
                   className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="MEMBER">Member</option>
-                  <option value="EDITOR">Editor</option>
-                  <option value="REVIEWER">Reviewer</option>
                   <option value="MANAGER">Manager</option>
                   <option value="ADMIN">Admin</option>
                 </select>
@@ -619,8 +641,6 @@ export default function TeamPage() {
                   className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="MEMBER">Member</option>
-                  <option value="EDITOR">Editor</option>
-                  <option value="REVIEWER">Reviewer</option>
                   <option value="MANAGER">Manager</option>
                   <option value="ADMIN">Admin</option>
                 </select>
