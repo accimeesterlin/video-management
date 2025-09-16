@@ -195,18 +195,18 @@ export default function TeamPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Team Management</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Team Management</h1>
           <p className="text-gray-600 mt-2">
             Manage your team members and their roles
           </p>
         </div>
         <Button
           onClick={() => setShowInviteModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium shadow-sm"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-3 rounded-lg font-medium shadow-sm w-full sm:w-auto"
         >
           <UserPlus className="h-5 w-5 mr-2" />
           Invite Member
@@ -214,7 +214,7 @@ export default function TeamPage() {
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <Card className="border-0 shadow-sm bg-white">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
@@ -296,7 +296,7 @@ export default function TeamPage() {
             </p>
             <Button
               onClick={() => setShowInviteModal(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-3 rounded-lg font-medium w-full sm:w-auto"
             >
               <UserPlus className="h-5 w-5 mr-2" />
               Invite First Member
@@ -304,7 +304,7 @@ export default function TeamPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
           {teamMembers.map((member) => (
             <Card
               key={member._id}
@@ -397,7 +397,7 @@ export default function TeamPage() {
       {/* Invite Member Modal */}
       {showInviteModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto mx-4">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">
                 Invite Team Member
@@ -560,7 +560,7 @@ export default function TeamPage() {
       {/* Edit Member Modal */}
       {showEditModal && editingMember && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto mx-4">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">
                 Edit Team Member

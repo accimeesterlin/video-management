@@ -198,18 +198,18 @@ export default function CompaniesPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Companies</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Companies</h1>
           <p className="text-gray-600 mt-2">
             Manage your companies and their teams
           </p>
         </div>
         <Button
           onClick={() => setShowCreateModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium shadow-sm"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-3 rounded-lg font-medium shadow-sm w-full sm:w-auto"
         >
           <Plus className="h-5 w-5 mr-2" />
           Create Company
@@ -217,49 +217,52 @@ export default function CompaniesPage() {
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         <Card className="border-0 shadow-sm bg-white">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
-              <Building2 className="h-4 w-4 mr-2 text-blue-500" />
-              Total Companies
+          <CardHeader className="pb-2 sm:pb-3">
+            <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 flex items-center">
+              <Building2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 text-blue-500" />
+              <span className="hidden sm:inline">Total Companies</span>
+              <span className="sm:hidden">Companies</span>
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-gray-900">
+          <CardContent className="pt-0">
+            <div className="text-xl sm:text-3xl font-bold text-gray-900">
               {companies.length}
             </div>
-            <p className="text-sm text-gray-500 mt-1">Active companies</p>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">Active companies</p>
           </CardContent>
         </Card>
 
         <Card className="border-0 shadow-sm bg-white">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
-              <Users className="h-4 w-4 mr-2 text-green-500" />
-              Total Team Members
+          <CardHeader className="pb-2 sm:pb-3">
+            <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 flex items-center">
+              <Users className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 text-green-500" />
+              <span className="hidden sm:inline">Total Team Members</span>
+              <span className="sm:hidden">Members</span>
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-gray-900">
+          <CardContent className="pt-0">
+            <div className="text-xl sm:text-3xl font-bold text-gray-900">
               {companies.reduce(
                 (sum, company) => sum + company.members.length,
                 0
               )}
             </div>
-            <p className="text-sm text-gray-500 mt-1">Across all companies</p>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">Across all companies</p>
           </CardContent>
         </Card>
 
         <Card className="border-0 shadow-sm bg-white">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
-              <Calendar className="h-4 w-4 mr-2 text-purple-500" />
-              Recently Added
+          <CardHeader className="pb-2 sm:pb-3">
+            <CardTitle className="text-xs sm:text-sm font-medium text-gray-600 flex items-center">
+              <Calendar className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 text-purple-500" />
+              <span className="hidden sm:inline">Recently Added</span>
+              <span className="sm:hidden">Recent</span>
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold text-gray-900">
+          <CardContent className="pt-0">
+            <div className="text-xl sm:text-3xl font-bold text-gray-900">
               {
                 companies.filter((c) => {
                   const created = new Date(c.createdAt);
@@ -270,7 +273,7 @@ export default function CompaniesPage() {
                 }).length
               }
             </div>
-            <p className="text-sm text-gray-500 mt-1">This week</p>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">This week</p>
           </CardContent>
         </Card>
       </div>
@@ -288,7 +291,7 @@ export default function CompaniesPage() {
             </p>
             <Button
               onClick={() => setShowCreateModal(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 sm:px-6 py-3 rounded-lg font-medium w-full sm:w-auto"
             >
               <Plus className="h-5 w-5 mr-2" />
               Create Company
@@ -296,7 +299,7 @@ export default function CompaniesPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
           {companies.map((company) => (
             <Card
               key={company._id}
@@ -392,7 +395,7 @@ export default function CompaniesPage() {
       {/* Create Company Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto mx-4">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">
                 Create New Company
@@ -536,7 +539,7 @@ export default function CompaniesPage() {
       {/* Edit Company Modal */}
       {showEditModal && editingCompany && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto mx-4">
             <div className="flex items-center justify-between p-6 border-b border-gray-100">
               <h3 className="text-xl font-semibold text-gray-900">
                 Edit Company

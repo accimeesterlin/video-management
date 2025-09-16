@@ -50,7 +50,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
       )}
 
       {/* Sidebar */}
-      <div className={`flex flex-col w-64 bg-white shadow-sm border-r border-gray-100 h-screen fixed left-0 top-0 z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${
+      <div className={`flex flex-col w-64 bg-white shadow-sm border-r border-gray-100 h-screen fixed left-0 top-0 z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
       <div className="flex items-center justify-between h-16 px-4 border-b border-gray-100">
@@ -70,6 +70,7 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
             <Link
               key={item.name}
               href={item.href}
+              onClick={() => setSidebarOpen(false)}
               className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${
                 isActive
                   ? "bg-blue-50 text-blue-700 border-r-2 border-blue-600"

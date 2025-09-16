@@ -114,18 +114,8 @@ export default function VideoDetailPage() {
   const { data: session } = useSession();
   const [video, setVideo] = useState<VideoItem | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showThumbnailModal, setShowThumbnailModal] = useState(false);
-  const [uploadingThumbnail, setUploadingThumbnail] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [addingComment, setAddingComment] = useState(false);
-  const [showResourceModal, setShowResourceModal] = useState(false);
-  const [addingResource, setAddingResource] = useState(false);
-  const [resourceData, setResourceData] = useState({
-    name: "",
-    type: "link" as 'link' | 'file' | 'document',
-    url: "",
-    description: ""
-  });
   const [showEditModal, setShowEditModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [editFormData, setEditFormData] = useState({
@@ -133,34 +123,11 @@ export default function VideoDetailPage() {
     description: "",
     tags: ""
   });
-  const [thumbnailsCollapsed, setThumbnailsCollapsed] = useState(true);
-  const [resourcesCollapsed, setResourcesCollapsed] = useState(true);
   const [editingComment, setEditingComment] = useState<string | null>(null);
   const [editCommentText, setEditCommentText] = useState("");
-  const [versionsCollapsed, setVersionsCollapsed] = useState(true);
-  const [showVersionModal, setShowVersionModal] = useState(false);
-  const [uploadingVersion, setUploadingVersion] = useState(false);
-  const [versionData, setVersionData] = useState({
-    description: "",
-    file: null as File | null
-  });
-  const [shortsCollapsed, setShortsCollapsed] = useState(true);
-  const [showShortsModal, setShowShortsModal] = useState(false);
-  const [uploadingShort, setUploadingShort] = useState(false);
   
-  // View modal states
-  const [showThumbnailsViewModal, setShowThumbnailsViewModal] = useState(false);
-  const [showResourcesViewModal, setShowResourcesViewModal] = useState(false);
-  const [showVersionsViewModal, setShowVersionsViewModal] = useState(false);
-  const [showShortsViewModal, setShowShortsViewModal] = useState(false);
-  const [shortData, setShortData] = useState({
-    description: "",
-    file: null as File | null
-  });
   
   // Modal refs for click outside detection
-  const thumbnailModalRef = useRef<HTMLDivElement>(null);
-  const resourceModalRef = useRef<HTMLDivElement>(null);
   const editModalRef = useRef<HTMLDivElement>(null);
   const shareModalRef = useRef<HTMLDivElement>(null);
 
@@ -173,13 +140,6 @@ export default function VideoDetailPage() {
   // Handle click outside modals
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (thumbnailModalRef.current && !thumbnailModalRef.current.contains(event.target as Node)) {
-        setShowThumbnailModal(false);
-      }
-      if (resourceModalRef.current && !resourceModalRef.current.contains(event.target as Node)) {
-        setShowResourceModal(false);
-        setResourceData({ name: "", type: "link", url: "", description: "" });
-      }
       if (editModalRef.current && !editModalRef.current.contains(event.target as Node)) {
         setShowEditModal(false);
       }
@@ -188,13 +148,11 @@ export default function VideoDetailPage() {
       }
     };
 
-    if (showThumbnailModal || showResourceModal || showEditModal || showShareModal || 
-        showThumbnailsViewModal || showResourcesViewModal || showVersionsViewModal || showShortsViewModal) {
+    if (showEditModal || showShareModal) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [showThumbnailModal, showResourceModal, showEditModal, showShareModal, 
-      showThumbnailsViewModal, showResourcesViewModal, showVersionsViewModal, showShortsViewModal]);
+  }, [showEditModal, showShareModal]);
 
   const fetchVideo = async (videoId: string) => {
     try {
@@ -236,62 +194,7 @@ export default function VideoDetailPage() {
     }
   };
 
-  const handleThumbnailUpload = async (file: File) => {
-    if (!video) return;
-    
-    setUploadingThumbnail(true);
-    try {
-      const formData = new FormData();
-      formData.append('thumbnail', file);
-      
-      const response = await fetch(`/api/videos/${video._id}/thumbnails`, {
-        method: 'POST',
-        body: formData,
-      });
 
-      if (response.ok) {
-        const result = await response.json();
-        setVideo(prev => prev ? {
-          ...prev,
-          thumbnails: [...(prev.thumbnails || []), result.thumbnail]
-        } : null);
-        toast.success('Thumbnail uploaded successfully');
-      } else {
-        const error = await response.json();
-        toast.error(error.message || 'Failed to upload thumbnail');
-      }
-    } catch (error) {
-      toast.error('Error uploading thumbnail');
-    } finally {
-      setUploadingThumbnail(false);
-    }
-  };
-
-  const handleThumbnailVote = async (thumbnailId: string) => {
-    if (!video) return;
-
-    try {
-      const response = await fetch(`/api/videos/${video._id}/thumbnails/${thumbnailId}/vote`, {
-        method: 'POST',
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        setVideo(prev => prev ? {
-          ...prev,
-          thumbnails: prev.thumbnails?.map(thumb => 
-            thumb.id === thumbnailId ? result.thumbnail : thumb
-          )
-        } : null);
-        toast.success(result.message);
-      } else {
-        const error = await response.json();
-        toast.error(error.message || 'Failed to vote');
-      }
-    } catch (error) {
-      toast.error('Error voting on thumbnail');
-    }
-  };
 
   const handleAddComment = async () => {
     if (!video || !newComment.trim()) return;
@@ -323,67 +226,6 @@ export default function VideoDetailPage() {
     }
   };
 
-  const handleAddResource = async () => {
-    if (!video || !resourceData.name.trim() || !resourceData.url.trim()) {
-      toast.error("Please fill in all required fields");
-      return;
-    }
-
-    setAddingResource(true);
-    try {
-      const response = await fetch(`/api/videos/${video._id}/resources`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(resourceData),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        setVideo(prev => prev ? {
-          ...prev,
-          resources: [...(prev.resources || []), result.resource]
-        } : null);
-        setResourceData({
-          name: "",
-          type: "link",
-          url: "",
-          description: ""
-        });
-        setShowResourceModal(false);
-        toast.success('Resource added successfully');
-      } else {
-        const error = await response.json();
-        toast.error(error.message || 'Failed to add resource');
-      }
-    } catch (error) {
-      toast.error('Error adding resource');
-    } finally {
-      setAddingResource(false);
-    }
-  };
-
-  const handleDeleteResource = async (resourceId: string) => {
-    if (!video || !confirm("Are you sure you want to delete this resource?")) return;
-
-    try {
-      const response = await fetch(`/api/videos/${video._id}/resources/${resourceId}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        setVideo(prev => prev ? {
-          ...prev,
-          resources: prev.resources?.filter(resource => resource.id !== resourceId)
-        } : null);
-        toast.success('Resource deleted successfully');
-      } else {
-        const error = await response.json();
-        toast.error(error.message || 'Failed to delete resource');
-      }
-    } catch (error) {
-      toast.error('Error deleting resource');
-    }
-  };
 
   const handleEditComment = (commentId: string, text: string) => {
     setEditingComment(commentId);
@@ -926,167 +768,7 @@ export default function VideoDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Quick Actions Section */}
-          <Card className="border-0 shadow-sm bg-white">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => setThumbnailsCollapsed(!thumbnailsCollapsed)}
-                  className="flex items-center group hover:bg-gray-50 p-2 -m-2 rounded-lg transition-colors"
-                >
-                  {thumbnailsCollapsed ? (
-                    <ChevronRight className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
-                  )}
-                  <CardTitle className="flex items-center">
-                    <Play className="h-5 w-5 mr-2" />
-                    Thumbnails ({video.thumbnails?.length || 0})
-                  </CardTitle>
-                </button>
-                <Button
-                  onClick={() => setShowThumbnailModal(true)}
-                  size="sm"
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Thumbnail
-                </Button>
-              </div>
-            </CardHeader>
-            {!thumbnailsCollapsed && (
-            <CardContent>
-              {video.thumbnails && video.thumbnails.length > 0 ? (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {video.thumbnails.map((thumbnail) => (
-                    <div key={thumbnail.id} className="space-y-2">
-                      <div className="relative aspect-video bg-gray-100 rounded-lg overflow-hidden">
-                        <img
-                          src={thumbnail.url}
-                          alt="Video thumbnail"
-                          className="w-full h-full object-cover"
-                        />
-                        <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded flex items-center">
-                          <Heart className="h-3 w-3 mr-1" />
-                          {thumbnail.votes.length}
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-gray-500">
-                          by {thumbnail.uploadedByName}
-                        </div>
-                        <Button
-                          onClick={() => handleThumbnailVote(thumbnail.id)}
-                          size="sm"
-                          variant="outline"
-                          className="text-xs"
-                        >
-                          <Heart className="h-3 w-3 mr-1" />
-                          Vote
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6">
-                  <Play className="h-12 w-12 text-gray-300 mx-auto mb-2" />
-                  <p className="text-gray-500">No thumbnails yet</p>
-                  <p className="text-sm text-gray-400">
-                    Upload thumbnails for team voting
-                  </p>
-                </div>
-              )}
-            </CardContent>
-            )}
-          </Card>
 
-          {/* Resources Section */}
-          <Card className="border-0 shadow-sm bg-white">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => setResourcesCollapsed(!resourcesCollapsed)}
-                  className="flex items-center group hover:bg-gray-50 p-2 -m-2 rounded-lg transition-colors"
-                >
-                  {resourcesCollapsed ? (
-                    <ChevronRight className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
-                  )}
-                  <CardTitle className="flex items-center">
-                    <Link className="h-5 w-5 mr-2" />
-                    Resources ({video.resources?.length || 0})
-                  </CardTitle>
-                </button>
-                <Button
-                  onClick={() => setShowResourceModal(true)}
-                  size="sm"
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Resource
-                </Button>
-              </div>
-            </CardHeader>
-            {!resourcesCollapsed && (
-            <CardContent>
-              {video.resources && video.resources.length > 0 ? (
-                <div className="space-y-3">
-                  {video.resources.map((resource) => (
-                    <div key={resource.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50">
-                      <div className="flex items-center space-x-3 flex-1 min-w-0">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                          resource.type === 'link' ? 'bg-blue-100 text-blue-600' :
-                          resource.type === 'file' ? 'bg-green-100 text-green-600' :
-                          'bg-purple-100 text-purple-600'
-                        }`}>
-                          {resource.type === 'link' ? <ExternalLink className="h-4 w-4" /> :
-                           resource.type === 'file' ? <Download className="h-4 w-4" /> :
-                           <FileText className="h-4 w-4" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-medium text-gray-900 truncate">{resource.name}</h4>
-                          <p className="text-sm text-gray-500 truncate">{resource.description || resource.url}</p>
-                          <div className="flex items-center space-x-2 text-xs text-gray-400 mt-1">
-                            <span>Added by {resource.addedByName}</span>
-                            <span>•</span>
-                            <span>{new Date(resource.addedAt).toLocaleDateString()}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          onClick={() => window.open(resource.url, '_blank')}
-                          size="sm"
-                          variant="outline"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          onClick={() => handleDeleteResource(resource.id)}
-                          size="sm"
-                          variant="outline"
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6">
-                  <Link className="h-12 w-12 text-gray-300 mx-auto mb-2" />
-                  <p className="text-gray-500">No resources yet</p>
-                  <p className="text-sm text-gray-400">
-                    Add useful links, files, or documents
-                  </p>
-                </div>
-              )}
-            </CardContent>
-            )}
-          </Card>
 
           {/* Comments Section */}
           <Card className="border-0 shadow-sm bg-white">
@@ -1217,196 +899,7 @@ export default function VideoDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Versions Section */}
-          <Card className="border-0 shadow-sm bg-white">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => setVersionsCollapsed(!versionsCollapsed)}
-                  className="flex items-center group hover:bg-gray-50 p-2 -m-2 rounded-lg transition-colors"
-                >
-                  {versionsCollapsed ? (
-                    <ChevronRight className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
-                  )}
-                  <CardTitle className="flex items-center">
-                    <RefreshCw className="h-5 w-5 mr-2" />
-                    Versions ({video.versions?.length || 0})
-                  </CardTitle>
-                </button>
-                <Button
-                  onClick={() => setShowVersionModal(true)}
-                  size="sm"
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Upload Version
-                </Button>
-              </div>
-            </CardHeader>
-            {!versionsCollapsed && (
-            <CardContent>
-              {video.versions && video.versions.length > 0 ? (
-                <div className="space-y-3">
-                  {video.versions.map((version) => (
-                    <div key={version.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-2">
-                            <div className="flex items-center space-x-2">
-                              <h4 className="font-medium text-gray-900">
-                                Version {version.versionNumber}
-                              </h4>
-                              {version.isActive && (
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                  Active
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <p className="text-sm text-gray-600 mb-2">{version.filename}</p>
-                          
-                          {version.description && (
-                            <p className="text-sm text-gray-700 mb-2">{version.description}</p>
-                          )}
-                          
-                          <div className="flex items-center space-x-4 text-xs text-gray-500">
-                            <span>Uploaded by {version.uploadedByName}</span>
-                            <span>•</span>
-                            <span>{formatFileSize(version.size)}</span>
-                            <span>•</span>
-                            <span>{new Date(version.uploadedAt).toLocaleDateString()}</span>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center space-x-2">
-                          {!version.isActive && (
-                            <Button
-                              onClick={() => handleSetActiveVersion(version.id)}
-                              size="sm"
-                              variant="outline"
-                              className="text-blue-600 border-blue-200 hover:bg-blue-50"
-                            >
-                              Set Active
-                            </Button>
-                          )}
-                          <Button
-                            onClick={() => window.open(version.url, '_blank')}
-                            size="sm"
-                            variant="outline"
-                          >
-                            <Play className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6">
-                  <RefreshCw className="h-12 w-12 text-gray-300 mx-auto mb-2" />
-                  <p className="text-gray-500">No versions yet</p>
-                  <p className="text-sm text-gray-400">
-                    Upload different versions for team review
-                  </p>
-                </div>
-              )}
-            </CardContent>
-            )}
-          </Card>
 
-          {/* Shorts Section */}
-          <Card className="border-0 shadow-sm bg-white">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => setShortsCollapsed(!shortsCollapsed)}
-                  className="flex items-center group hover:bg-gray-50 p-2 -m-2 rounded-lg transition-colors"
-                >
-                  {shortsCollapsed ? (
-                    <ChevronRight className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 mr-2 text-gray-500 group-hover:text-gray-700" />
-                  )}
-                  <CardTitle className="flex items-center">
-                    <Video className="h-5 w-5 mr-2" />
-                    Shorts ({video.shorts?.length || 0})
-                  </CardTitle>
-                </button>
-                <Button
-                  onClick={() => setShowShortsModal(true)}
-                  size="sm"
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Upload Short
-                </Button>
-              </div>
-            </CardHeader>
-            {!shortsCollapsed && (
-            <CardContent>
-              {video.shorts && video.shorts.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {video.shorts.map((short) => (
-                    <div key={short.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
-                      <div className="space-y-3">
-                        {/* Short Video Preview */}
-                        <div className="aspect-video bg-gray-900 rounded-lg flex items-center justify-center">
-                          <video
-                            src={short.url}
-                            controls
-                            className="w-full h-full rounded-lg"
-                            preload="metadata"
-                          >
-                            Your browser does not support the video tag.
-                          </video>
-                        </div>
-                        
-                        {/* Short Info */}
-                        <div>
-                          <p className="text-sm font-medium text-gray-900 mb-1">{short.filename}</p>
-                          {short.description && (
-                            <p className="text-sm text-gray-600 mb-2">{short.description}</p>
-                          )}
-                          <div className="flex items-center justify-between text-xs text-gray-500">
-                            <div className="flex items-center space-x-2">
-                              <span>by {short.uploadedByName}</span>
-                              <span>•</span>
-                              <span>{new Date(short.uploadedAt).toLocaleDateString()}</span>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <button
-                                onClick={() => handleShortVote(short.id)}
-                                className="flex items-center space-x-1 px-2 py-1 rounded-full bg-gray-100 hover:bg-blue-50 transition-colors"
-                              >
-                                <Heart className={`h-3 w-3 ${
-                                  short.votes.some(vote => vote.userId === session?.user?.email) 
-                                    ? 'fill-red-500 text-red-500' 
-                                    : 'text-gray-400'
-                                }`} />
-                                <span className="text-xs">{short.votes.length}</span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6">
-                  <Video className="h-12 w-12 text-gray-300 mx-auto mb-2" />
-                  <p className="text-gray-500">No shorts yet</p>
-                  <p className="text-sm text-gray-400">
-                    Upload short video clips for team voting
-                  </p>
-                </div>
-              )}
-            </CardContent>
-            )}
-          </Card>
         </div>
 
         {/* Sidebar */}
