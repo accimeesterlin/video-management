@@ -840,8 +840,9 @@ export default function VideoDetailPage() {
         toast.success('Thumbnail generated successfully');
         setVideo((prev) => prev ? {
           ...prev,
-          thumbnail: result.thumbnail
+          thumbnail: result.thumbnail,
         } : prev);
+        fetchVideo(video._id);
       } else {
         const error = await response.json();
         toast.error(error.message || 'Failed to generate thumbnail');

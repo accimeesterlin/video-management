@@ -1,5 +1,7 @@
-import nodemailer from "nodemailer";
+import * as nodemailer from "nodemailer";
 import { Resend } from "resend";
+import { connectToDatabase } from "./mongodb";
+import { ObjectId } from "mongodb";
 
 export interface EmailOptions {
   to: string | string[];
@@ -33,8 +35,107 @@ export class EmailService {
     }
   }
 
-  async sendEmail(options: EmailOptions) {
+  async getStoredEmailProvider(userId: string) {
     try {
+      const { db } = await connectToDatabase();
+      
+      // Get user's default email provider
+      const userObjectId = new ObjectId(userId);
+      const user = await db.collection("users").findOne({ _id: userObjectId });
+      const defaultProviderId = user?.defaultEmailProvider;
+      
+      if (!defaultProviderId) {
+        return null;
+      }
+      
+      // Get the stored credentials for the default provider
+      const integration = await db.collection("user_integrations").findOne({
+        userId: userObjectId,
+        integrationId: defaultProviderId,
+        isConnected: true
+      });
+      
+      return integration;
+    } catch (error) {
+      console.error("Error fetching stored email provider:", error);
+      return null;
+    }
+  }
+
+  async createTransportFromIntegration(integration: any) {
+    const provider = integration.integrationId;
+    const credentials = integration.credentials;
+    
+    switch (provider) {
+      case 'zeptomail':
+        return {
+          transporter: nodemailer.createTransport({
+            host: 'smtp.zeptomail.com',
+            port: 587,
+            secure: false,
+            auth: {
+              user: 'emailapikey',
+              pass: credentials['API Key']
+            }
+          }),
+          fromEmail: credentials['From Email']
+        };
+
+      case 'sendgrid':
+        return {
+          transporter: nodemailer.createTransport({
+            host: 'smtp.sendgrid.net',
+            port: 587,
+            secure: false,
+            auth: {
+              user: 'apikey',
+              pass: credentials['API Key']
+            }
+          }),
+          fromEmail: credentials['From Email']
+        };
+
+      case 'mailgun':
+        const region = credentials['Region']?.toLowerCase() === 'eu' ? 'eu' : 'us';
+        const mailgunHost = region === 'eu' ? 'smtp.eu.mailgun.org' : 'smtp.mailgun.org';
+        
+        return {
+          transporter: nodemailer.createTransport({
+            host: mailgunHost,
+            port: 587,
+            secure: false,
+            auth: {
+              user: `postmaster@${credentials['Domain']}`,
+              pass: credentials['API Key']
+            }
+          }),
+          fromEmail: `noreply@${credentials['Domain']}`
+        };
+
+      default:
+        throw new Error(`Unsupported email provider: ${provider}`);
+    }
+  }
+
+  async sendEmail(options: EmailOptions, userId?: string) {
+    try {
+      // If userId is provided, try to use stored email integration
+      if (userId) {
+        const integration = await this.getStoredEmailProvider(userId);
+        if (integration) {
+          const { transporter, fromEmail } = await this.createTransportFromIntegration(integration);
+          return await transporter.sendMail({
+            from: fromEmail,
+            to: options.to,
+            subject: options.subject,
+            text: options.text,
+            html: options.html,
+            attachments: options.attachments,
+          });
+        }
+      }
+
+      // Fallback to default email service
       if (this.resend) {
         return await this.sendWithResend(options);
       } else {
@@ -90,7 +191,8 @@ export class EmailService {
     email: string,
     projectName: string,
     inviterName: string,
-    inviteUrl: string
+    inviteUrl: string,
+    userId?: string
   ) {
     const html = `
       <!DOCTYPE html>
@@ -145,7 +247,7 @@ export class EmailService {
       subject: `You've been invited to join "${projectName}"`,
       html,
       text: `Hi! ${inviterName} has invited you to collaborate on the video editing project "${projectName}". Join the project: ${inviteUrl}`,
-    });
+    }, userId);
   }
 
   async sendProjectStatusUpdate(

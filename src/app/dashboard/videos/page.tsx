@@ -70,6 +70,7 @@ export default function VideosPage() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [tags, setTags] = useState<any[]>([]);
+  const [companies, setCompanies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -91,21 +92,25 @@ export default function VideosPage() {
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [videosPerPage, setVideosPerPage] = useState(12);
-  const [compressionEnabled, setCompressionEnabled] = useState(true);
+  const [compressionEnabled, setCompressionEnabled] = useState(false);
   const [compressionQuality, setCompressionQuality] = useState(0.8);
   const [compressingFiles, setCompressingFiles] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
     project: "",
+    company: "",
     tags: "",
   });
+  const [thumbnailErrors, setThumbnailErrors] = useState<Record<string, boolean>>({});
+  const [lastUsedProject, setLastUsedProject] = useState<string>("");
 
   useEffect(() => {
     if (session) {
       fetchVideos();
       fetchProjects();
       fetchTags();
+      fetchCompanies();
     }
   }, [session]);
 
@@ -116,7 +121,7 @@ export default function VideosPage() {
 
   const fetchVideos = async () => {
     try {
-      const response = await fetch("/api/videos");
+      const response = await fetch("/api/videos", { cache: "no-store" });
       if (response.ok) {
         const data = await response.json();
         setVideos(data);
@@ -137,9 +142,14 @@ export default function VideosPage() {
         const data = await response.json();
         setProjects(data);
         console.log('Fetched projects:', data);
-        // Set first project as default if none selected
-        if (data.length > 0 && !formData.project) {
-          setFormData(prev => ({ ...prev, project: data[0].name }));
+        if (data.length > 0) {
+          const preferred = lastUsedProject || data[0].name;
+          if (!formData.project) {
+            setFormData(prev => ({ ...prev, project: preferred }));
+          }
+          if (!lastUsedProject) {
+            setLastUsedProject(preferred);
+          }
         }
       } else {
         const errorData = await response.json().catch(() => ({}));
@@ -169,6 +179,84 @@ export default function VideosPage() {
       console.error("Error fetching tags:", error);
     }
   };
+
+  const fetchCompanies = async () => {
+    try {
+      const response = await fetch("/api/companies");
+      if (response.ok) {
+        const data = await response.json();
+        setCompanies(data);
+      }
+    } catch (error) {
+      console.error("Error fetching companies:", error);
+    }
+  };
+
+  const refreshVideoAssets = useCallback(
+    async (videoId: string) => {
+      try {
+        const response = await fetch(`/api/videos/${videoId}`);
+        if (!response.ok) {
+          return;
+        }
+
+        const updated = await response.json();
+        setVideos((prev) =>
+          prev.map((video) =>
+            video._id === videoId
+              ? {
+                  ...video,
+                  url: updated.url || video.url,
+                  thumbnail: updated.thumbnail || video.thumbnail,
+                  thumbnailKey: updated.thumbnailKey || video.thumbnailKey,
+                  isExternalLink: updated.isExternalLink ?? video.isExternalLink,
+                  platform: updated.platform ?? video.platform,
+                }
+              : video
+          )
+        );
+
+        setPreviewVideo((prev) =>
+          prev && prev._id === videoId
+            ? {
+                ...prev,
+                url: updated.url || prev.url,
+                thumbnail: updated.thumbnail || prev.thumbnail,
+                isExternalLink: updated.isExternalLink ?? prev.isExternalLink,
+                platform: updated.platform ?? prev.platform,
+              }
+            : prev
+        );
+
+        setThumbnailErrors((prev) => {
+          if (!(videoId in prev)) return prev;
+          const next = { ...prev };
+          delete next[videoId];
+          return next;
+        });
+      } catch (error) {
+        console.error("Failed to refresh video assets", videoId, error);
+      }
+    },
+    []
+  );
+
+  const handleThumbnailError = useCallback(
+    (videoId: string) => {
+      setThumbnailErrors((prev) => ({ ...prev, [videoId]: true }));
+      refreshVideoAssets(videoId);
+    },
+    [refreshVideoAssets]
+  );
+
+  const handleThumbnailLoad = useCallback((videoId: string) => {
+    setThumbnailErrors((prev) => {
+      if (!(videoId in prev)) return prev;
+      const next = { ...prev };
+      delete next[videoId];
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!searchParams) return;
@@ -249,6 +337,7 @@ export default function VideosPage() {
           title: formData.title.trim(),
           description: formData.description,
           project: formData.project || "General",
+          companyId: formData.company || null,
           tags: allTags,
           duration: linkMetadata.duration ?? 0,
           thumbnailUrl: linkMetadata.thumbnailUrl,
@@ -261,6 +350,12 @@ export default function VideosPage() {
         const newVideo = await response.json();
         setVideos((prev) => [newVideo, ...prev]);
         toast.success("Video link added successfully");
+        if ((formData.project || newVideo.project) && formData.project !== lastUsedProject) {
+          setLastUsedProject(formData.project || newVideo.project);
+        }
+        if (newVideo?._id) {
+          await refreshVideoAssets(newVideo._id);
+        }
         
         // Reset form
         setVideoLink('');
@@ -268,10 +363,12 @@ export default function VideosPage() {
           title: "",
           description: "",
           project: "",
+          company: "",
           tags: "",
         });
         setSelectedTags([]);
         setShowUploadModal(false);
+        await fetchVideos();
       } else {
         const error = await response.json();
         toast.error(error.error || "Failed to add video link");
@@ -445,6 +542,10 @@ export default function VideosPage() {
         return;
       }
 
+      video.muted = true;
+      (video as any).playsInline = true;
+      video.preload = 'auto';
+
       video.addEventListener('loadedmetadata', () => {
         // Set canvas size to video dimensions (or a max size)
         const maxWidth = 400;
@@ -488,6 +589,9 @@ export default function VideosPage() {
 
       video.src = URL.createObjectURL(file);
       video.load();
+      video.play().catch(() => {
+        /* ignore */
+      });
     });
   };
 
@@ -501,6 +605,10 @@ export default function VideosPage() {
         reject(new Error('Canvas context not available'));
         return;
       }
+
+      video.muted = true;
+      (video as any).playsInline = true;
+      video.preload = 'auto';
 
       video.addEventListener('loadedmetadata', () => {
         // Set canvas dimensions based on compression quality
@@ -542,10 +650,12 @@ export default function VideosPage() {
           } else {
             mediaRecorder.stop();
           }
-        };
+       };
 
-        video.addEventListener('play', drawFrame);
-        video.play();
+       video.addEventListener('play', drawFrame);
+        video.play().catch(() => {
+          /* ignore */
+        });
       });
 
       video.addEventListener('error', () => {
@@ -598,6 +708,8 @@ export default function VideosPage() {
 
     setUploading(true);
     setUploadProgress(0);
+    setShowUploadModal(false);
+    toast.info("Upload started. You can continue working while we finish in the background.");
 
     try {
       const totalFiles = selectedFiles.length;
@@ -724,6 +836,7 @@ export default function VideosPage() {
             title: formData.title || originalFile.name.replace(/\.[^/.]+$/, ""),
             description: formData.description,
             project: formData.project || "General",
+            companyId: formData.company || null,
             tags: allTags,
             size: fileToUpload.size,
             originalSize: originalFile.size,
@@ -741,17 +854,33 @@ export default function VideosPage() {
         }
 
         const newVideo = await videoResponse.json();
-        setVideos((prev) => [newVideo, ...prev]);
+        setVideos((prev) => {
+          const filtered = prev.filter((video) => video._id !== newVideo._id);
+          return [newVideo, ...filtered];
+        });
+        setCurrentPage(1);
+        if (newVideo?._id) {
+          await refreshVideoAssets(newVideo._id);
+        }
+        if (formData.project) {
+          setLastUsedProject(formData.project);
+        }
 
         completedFiles++;
         setUploadProgress(Math.round((completedFiles / totalFiles) * 100));
       }
 
       toast.success(`${selectedFiles.length} video(s) uploaded successfully`);
-      setShowUploadModal(false);
       setSelectedFiles([]);
       setSelectedTags([]);
-      setFormData({ title: "", description: "", project: "", tags: "" });
+      setFormData({
+        title: "",
+        description: "",
+        project: lastUsedProject,
+        company: "",
+        tags: "",
+      });
+      await fetchVideos();
     } catch (error) {
       console.error("Upload error:", error);
       toast.error("Error uploading videos");
@@ -803,7 +932,7 @@ export default function VideosPage() {
       toast.success("Video updated successfully");
       setShowEditModal(false);
       setEditingVideo(null);
-      setFormData({ title: "", description: "", project: "", tags: "" });
+      setFormData({ title: "", description: "", project: "", company: "", tags: "" });
       fetchVideos();
     } catch (error) {
       toast.error("Error updating video");
@@ -830,13 +959,14 @@ export default function VideosPage() {
       title: video.title,
       description: video.description,
       project: video.project,
+      company: "", // Videos don't have company in their interface currently
       tags: video.tags.join(", "),
     });
     setShowEditModal(true);
   };
 
   const resetForm = () => {
-    setFormData({ title: "", description: "", project: "", tags: "" });
+    setFormData({ title: "", description: "", project: "", company: "", tags: "" });
     setEditingVideo(null);
     setSelectedFiles([]);
     setSelectedTags([]);
@@ -1271,17 +1401,30 @@ export default function VideosPage() {
             >
               <CardHeader className="pb-4">
                 <div className="relative aspect-video bg-gray-100 rounded-lg flex items-center justify-center mb-3 group">
-                  {video.thumbnail ? (
+                  {video.thumbnail && !thumbnailErrors[video._id] ? (
                     <img
                       src={video.thumbnail}
                       alt={video.title}
                       className="w-full h-full object-cover rounded-lg"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                        const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                        if (fallback) fallback.classList.remove('hidden');
-                      }}
+                      onError={() => handleThumbnailError(video._id)}
+                      onLoad={() => handleThumbnailLoad(video._id)}
                     />
+                  ) : video.thumbnail ? (
+                    <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex flex-col items-center justify-center text-center p-4">
+                      <Video className="h-12 w-12 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-600">Thumbnail failed to load</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          refreshVideoAssets(video._id);
+                        }}
+                      >
+                        Retry
+                      </Button>
+                    </div>
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg flex items-center justify-center">
                       <div className="text-center">
@@ -1290,17 +1433,9 @@ export default function VideosPage() {
                       </div>
                     </div>
                   )}
-                  {video.thumbnail && (
-                    <div className="hidden w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center">
-                      <div className="text-center">
-                        <Video className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-                        <p className="text-xs text-gray-500">Thumbnail failed to load</p>
-                      </div>
-                    </div>
-                  )}
-                  
+
                   {/* Preview overlay */}
-                  {hoveredVideo === video._id && (
+                  {hoveredVideo === video._id && !thumbnailErrors[video._id] && (
                     <div className="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button
                         onClick={(e) => {
@@ -1777,9 +1912,11 @@ export default function VideosPage() {
                   </label>
                   <select
                     value={formData.project}
-                    onChange={(e) =>
-                      setFormData({ ...formData, project: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormData({ ...formData, project: value });
+                      setLastUsedProject(value);
+                    }}
                     disabled={uploading}
                     className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50"
                   >
@@ -1787,6 +1924,27 @@ export default function VideosPage() {
                     {projects.map((project) => (
                       <option key={project._id} value={project.name}>
                         {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Company
+                  </label>
+                  <select
+                    value={formData.company}
+                    onChange={(e) =>
+                      setFormData({ ...formData, company: e.target.value })
+                    }
+                    disabled={uploading}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50"
+                  >
+                    <option value="">Select company (optional)</option>
+                    {companies.map((company) => (
+                      <option key={company._id} value={company._id}>
+                        {company.name}
                       </option>
                     ))}
                   </select>

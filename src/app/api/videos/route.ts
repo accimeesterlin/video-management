@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
       thumbnailKey,
       thumbnailUrl,
       platform,
+      companyId,
     } = body;
 
     // Get user data
@@ -47,14 +48,17 @@ export async function POST(request: NextRequest) {
       ? getS3VideoUrl(resolvedThumbnailKey)
       : thumbnailUrl || null;
 
+    // Use provided companyId or default to user's companyId
+    const finalCompanyId = companyId || user.companyId;
+
     let projectId: ObjectId | null = null;
     if (project) {
       try {
         const projectFilter: any = { name: project };
 
-        if (user.companyId) {
+        if (finalCompanyId) {
           projectFilter.$or = [
-            { companyId: user.companyId },
+            { companyId: finalCompanyId },
             { ownerId: user._id },
           ];
         } else {
@@ -84,7 +88,7 @@ export async function POST(request: NextRequest) {
         project: project || "General",
         uploadedBy: user._id,
         uploadedByName: user.name,
-        companyId: user.companyId,
+        companyId: finalCompanyId,
         uploadedAt: new Date(),
         tags: tags ? tags.split(",").map((t: string) => t.trim()) : [],
         comments: [],
@@ -110,7 +114,7 @@ export async function POST(request: NextRequest) {
         project: project || "General",
         uploadedBy: user._id,
         uploadedByName: user.name,
-        companyId: user.companyId,
+        companyId: finalCompanyId,
         uploadedAt: new Date(),
         tags: tags ? tags.split(",").map((t: string) => t.trim()) : [],
         comments: [],

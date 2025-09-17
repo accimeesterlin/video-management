@@ -25,6 +25,7 @@ interface TeamMember {
   email: string;
   role: string;
   company: string;
+  companyId: string;
   status: string;
   phone?: string;
   location?: string;
@@ -42,6 +43,8 @@ export default function TeamPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [memberToDelete, setMemberToDelete] = useState<TeamMember | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -64,7 +67,7 @@ export default function TeamPage() {
 
   const fetchTeamMembers = async () => {
     try {
-      const response = await fetch("/api/team");
+      const response = await fetch("/api/team", { cache: "no-store" });
       if (response.ok) {
         const data = await response.json();
         setTeamMembers(data);
@@ -159,15 +162,35 @@ export default function TeamPage() {
     }
   };
 
-  const handleDeleteMember = async (memberId: string) => {
-    if (!confirm("Are you sure you want to remove this team member?")) {
-      return;
-    }
+  const handleDeleteMember = (member: TeamMember) => {
+    setMemberToDelete(member);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteMember = async () => {
+    if (!memberToDelete) return;
 
     try {
-      // In real app, this would delete via API
-      toast.success("Team member removed successfully");
-      fetchTeamMembers();
+      const response = await fetch("/api/team", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: memberToDelete._id,
+          companyId: memberToDelete.companyId,
+        }),
+      });
+
+      if (response.ok) {
+        toast.success("Team member removed successfully");
+        // Update UI immediately by filtering out the removed member
+        setTeamMembers(prev => prev.filter(m => m._id !== memberToDelete._id));
+        setShowDeleteModal(false);
+        setMemberToDelete(null);
+        fetchTeamMembers();
+      } else {
+        const error = await response.json();
+        toast.error(error.message || "Failed to remove team member");
+      }
     } catch (error) {
       toast.error("Error removing team member");
     }
@@ -220,8 +243,9 @@ export default function TeamPage() {
         </div>
         <Button
           onClick={() => {
-            // Set default company from current user
-            const defaultCompanyId = currentUser?.companyId?.toString() || "";
+            // Set default company: use current user's company if available, otherwise first company in list
+            const defaultCompanyId = currentUser?.companyId?.toString() || 
+              (companies.length > 0 ? companies[0]._id : "");
             setFormData(prev => ({ ...prev, companyId: defaultCompanyId }));
             setShowInviteModal(true);
           }}
@@ -315,8 +339,9 @@ export default function TeamPage() {
             </p>
             <Button
               onClick={() => {
-                // Set default company from current user
-                const defaultCompanyId = currentUser?.companyId?.toString() || "";
+                // Set default company: use current user's company if available, otherwise first company in list
+                const defaultCompanyId = currentUser?.companyId?.toString() || 
+                  (companies.length > 0 ? companies[0]._id : "");
                 setFormData(prev => ({ ...prev, companyId: defaultCompanyId }));
                 setShowInviteModal(true);
               }}
@@ -363,7 +388,7 @@ export default function TeamPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDeleteMember(member._id)}
+                      onClick={() => handleDeleteMember(member)}
                       className="text-gray-400 hover:text-red-600 hover:bg-red-50"
                     >
                       <Trash2 className="h-4 w-4" />
@@ -710,6 +735,54 @@ export default function TeamPage() {
               >
                 <Save className="h-4 w-4 mr-2" />
                 Save Changes
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Member Confirmation */}
+      {showDeleteModal && memberToDelete && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-xl font-semibold text-gray-900">Remove Team Member</h3>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setMemberToDelete(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-gray-600">
+                Are you sure you want to remove <span className="font-semibold">{memberToDelete.name}</span> from the team?
+              </p>
+              <p className="text-sm text-gray-500">
+                This action will revoke their access to company resources until they are invited again.
+              </p>
+            </div>
+
+            <div className="flex space-x-3 p-6 border-t border-gray-100">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setMemberToDelete(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                onClick={confirmDeleteMember}
+              >
+                Remove Member
               </Button>
             </div>
           </div>

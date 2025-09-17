@@ -196,23 +196,70 @@ export default function IntegrationsPage() {
   const [currentIntegration, setCurrentIntegration] = useState<string>("");
   const [credentials, setCredentials] = useState<{[key: string]: string}>({});
   const [savingCredentials, setSavingCredentials] = useState(false);
+  const [defaultEmailProvider, setDefaultEmailProvider] = useState<string>("");
 
   const categories = ["all", "Storage", "Video Platform", "Communication", "Creative Tools", "Email Services", "Automation"];
 
   useEffect(() => {
     if (session) {
       fetchIntegrations();
+      fetchUserPreferences();
     }
   }, [session]);
 
+  const fetchUserPreferences = async () => {
+    try {
+      const response = await fetch('/api/user/preferences');
+      if (response.ok) {
+        const data = await response.json();
+        setDefaultEmailProvider(data.defaultEmailProvider || "");
+      }
+    } catch (error) {
+      console.error('Error fetching user preferences:', error);
+    }
+  };
+
+  const setAsDefaultEmailProvider = async (integrationId: string) => {
+    try {
+      const response = await fetch('/api/user/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ defaultEmailProvider: integrationId })
+      });
+
+      if (response.ok) {
+        setDefaultEmailProvider(integrationId);
+        const integration = integrations.find(i => i.id === integrationId);
+        toast.success(`${integration?.name} set as default email provider`);
+      } else {
+        toast.error('Failed to set default email provider');
+      }
+    } catch (error) {
+      toast.error('Error setting default email provider');
+    }
+  };
+
   const fetchIntegrations = async () => {
     try {
+      // Fetch saved integrations from API
+      const response = await fetch('/api/integrations/credentials');
+      const savedIntegrations = response.ok ? await response.json() : [];
+      
+      // Create a map of saved integrations for quick lookup
+      const savedIntegrationsMap = new Map(
+        savedIntegrations.map((integration: any) => [integration.integrationId, integration])
+      );
+      
       // Transform available integrations to include connection status
-      const transformedIntegrations: Integration[] = availableIntegrations.map(integration => ({
-        ...integration,
-        isConnected: false, // In real app, this would come from API
-        status: "inactive" as const,
-      }));
+      const transformedIntegrations: Integration[] = availableIntegrations.map(integration => {
+        const savedIntegration = savedIntegrationsMap.get(integration.id) as any;
+        return {
+          ...integration,
+          isConnected: savedIntegration?.isConnected || false,
+          status: savedIntegration?.status || "inactive" as const,
+          connectedAt: savedIntegration?.connectedAt,
+        };
+      });
       
       setIntegrations(transformedIntegrations);
     } catch (error) {
@@ -253,6 +300,7 @@ export default function IntegrationsPage() {
         
         const integration = integrations.find(i => i.id === integrationId);
         toast.success(`Successfully connected to ${integration?.name}`);
+        await fetchIntegrations();
       }
     } catch (error) {
       toast.error("Failed to connect integration");
@@ -366,6 +414,39 @@ export default function IntegrationsPage() {
         return;
       }
 
+      const integration = integrations.find(i => i.id === currentIntegration);
+      
+      // For email services, test the connection before saving
+      if (integration?.category === "Email Services") {
+        try {
+          setTestingEmail(currentIntegration);
+          
+          // Test email with current user's email
+          const testResponse = await fetch('/api/email/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              provider: currentIntegration,
+              testEmail: session?.user?.email,
+              credentials: credentials
+            })
+          });
+
+          if (!testResponse.ok) {
+            const testError = await testResponse.json();
+            toast.error(`Email test failed: ${testError.error || 'Invalid credentials'}`);
+            return;
+          }
+          
+          toast.success(`Email test successful! Test email sent to ${session?.user?.email}`);
+        } catch (testError) {
+          toast.error('Email test failed. Please check your credentials.');
+          return;
+        } finally {
+          setTestingEmail(null);
+        }
+      }
+
       // Save credentials (in real app, this would encrypt and store securely)
       const response = await fetch('/api/integrations/credentials', {
         method: 'POST',
@@ -392,13 +473,13 @@ export default function IntegrationsPage() {
           )
         );
         
-        const integration = integrations.find(i => i.id === currentIntegration);
         toast.success(`Successfully connected to ${integration?.name}`);
         
         // Close modal and reset
         setShowCredentialModal(false);
         setCurrentIntegration("");
         setCredentials({});
+        await fetchIntegrations();
       } else {
         const error = await response.json();
         toast.error(error.message || 'Failed to save credentials');
@@ -413,6 +494,17 @@ export default function IntegrationsPage() {
 
   const handleDisconnect = async (integrationId: string) => {
     try {
+      const response = await fetch('/api/integrations/credentials', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ integrationId }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to disconnect integration');
+      }
+
       setIntegrations(prev => 
         prev.map(integration => 
           integration.id === integrationId 
@@ -425,11 +517,15 @@ export default function IntegrationsPage() {
             : integration
         )
       );
-      
+
       const integration = integrations.find(i => i.id === integrationId);
+      if (defaultEmailProvider === integrationId) {
+        setDefaultEmailProvider("");
+      }
       toast.success(`Disconnected from ${integration?.name}`);
+      await fetchIntegrations();
     } catch (error) {
-      toast.error("Failed to disconnect integration");
+      toast.error(error instanceof Error ? error.message : "Failed to disconnect integration");
     }
   };
 
@@ -607,25 +703,46 @@ export default function IntegrationsPage() {
                 )}
 
                 {/* Actions */}
-                <div className="flex space-x-2 pt-2">
+                <div className="flex flex-col space-y-2 pt-2">
                   {integration.isConnected ? (
                     <>
-                      <Button
-                        onClick={() => handleDisconnect(integration.id)}
-                        variant="outline"
-                        size="sm"
-                        className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
-                      >
-                        <X className="h-4 w-4 mr-2" />
-                        Disconnect
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-gray-600 border-gray-200 hover:bg-gray-50"
-                      >
-                        <Settings className="h-4 w-4" />
-                      </Button>
+                      <div className="flex space-x-2">
+                        <Button
+                          onClick={() => handleDisconnect(integration.id)}
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Disconnect
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-gray-600 border-gray-200 hover:bg-gray-50"
+                        >
+                          <Settings className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      {integration.category === "Email Services" && (
+                        <div className="flex space-x-2">
+                          {defaultEmailProvider === integration.id ? (
+                            <div className="flex items-center text-green-600 text-xs font-medium bg-green-50 px-2 py-1 rounded border border-green-200">
+                              <Check className="h-3 w-3 mr-1" />
+                              Default Email Provider
+                            </div>
+                          ) : (
+                            <Button
+                              onClick={() => setAsDefaultEmailProvider(integration.id)}
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 text-blue-600 border-blue-200 hover:bg-blue-50"
+                            >
+                              Set as Default
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </>
                   ) : (
                   <Button

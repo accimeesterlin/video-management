@@ -6,7 +6,8 @@
       "mcp__ide__getDiagnostics",
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
-      "Bash(yarn build)"
+      "Bash(yarn build)",
+      "Bash(grep:*)"
     ],
     "defaultMode": "acceptEdits"
   }

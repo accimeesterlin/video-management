@@ -3,6 +3,40 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/mongodb";
 
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { db } = await connectToDatabase();
+
+    // Get user
+    const user = await db
+      .collection("users")
+      .findOne({ email: session.user.email });
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Get all user integrations
+    const integrations = await db
+      .collection("user_integrations")
+      .find({ userId: user._id })
+      .toArray();
+
+    return NextResponse.json(integrations);
+
+  } catch (error) {
+    console.error("Error fetching integrations:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -65,6 +99,57 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error("Error saving credentials:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { integrationId } = await request.json();
+
+    if (!integrationId) {
+      return NextResponse.json(
+        { error: "Integration ID is required" },
+        { status: 400 }
+      );
+    }
+
+    const { db } = await connectToDatabase();
+
+    const user = await db
+      .collection("users")
+      .findOne({ email: session.user.email });
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    await db.collection("user_integrations").deleteOne({
+      userId: user._id,
+      integrationId,
+    });
+
+    await db.collection("users").updateOne(
+      { _id: user._id, defaultEmailProvider: integrationId },
+      {
+        $unset: { defaultEmailProvider: "" },
+        $set: { updatedAt: new Date() },
+      }
+    );
+
+    return NextResponse.json({
+      message: "Integration disconnected",
+      integrationId,
+    });
+  } catch (error) {
+    console.error("Error disconnecting integration:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
