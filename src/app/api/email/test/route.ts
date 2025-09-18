@@ -31,8 +31,10 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "ZeptoMail API Key and From Email are required" }, { status: 400 });
           }
           
+          const zeptoRegion = credentials['Region']?.toLowerCase().trim() === 'in' ? 'in' : 'com';
+          const zeptoHost = zeptoRegion === 'in' ? 'smtp.zeptomail.in' : 'smtp.zeptomail.com';
           transporter = nodemailer.createTransport({
-            host: 'smtp.zeptomail.com',
+            host: zeptoHost,
             port: 587,
             secure: false,
             auth: {

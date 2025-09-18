@@ -3,9 +3,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Company from "@/models/Company";
 import User from "@/models/User";
-import { connectToDatabase } from "@/lib/mongodb";
+import dbConnect, { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import { emailService } from "@/lib/email";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 export async function GET() {
   try {
@@ -15,6 +17,7 @@ export async function GET() {
     }
 
     await connectToDatabase();
+    await dbConnect();
 
     // Get user by email first
     const user = await User.findOne({ email: session.user?.email });
@@ -57,6 +60,7 @@ export async function GET() {
           };
           role: string;
           joinedAt: Date;
+          status?: string;
         }) => {
           if (!seenUsers.has(member.userId._id.toString())) {
             seenUsers.add(member.userId._id.toString());
@@ -67,7 +71,7 @@ export async function GET() {
               role: member.role,
               company: company.name,
               companyId: company._id.toString(),
-              status: "Active",
+              status: member.status === "PENDING" ? "Pending" : "Active",
               joinedDate: member.joinedAt,
               currentProjects: 0,
               completedProjects: 0,
@@ -114,6 +118,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     await connectToDatabase();
+    await dbConnect();
 
     // Get current user to verify permissions
     const currentUser = await User.findOne({ email: session.user.email });
@@ -207,6 +212,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+    const trimmedName = name.trim();
+    const safeName = trimmedName || normalizedEmail.split("@")[0];
+
     // Validate ObjectId format
     if (!ObjectId.isValid(companyId)) {
       return NextResponse.json(
@@ -216,20 +225,7 @@ export async function POST(request: NextRequest) {
     }
 
     await connectToDatabase();
-
-    // Check if user already exists
-    let user = await User.findOne({ email });
-
-    if (!user) {
-      // Create new user (for invitation, password will be set when they sign up)
-      user = new User({
-        name,
-        email,
-        password: "temp_password", // This should be handled differently in real app
-        role: role || "MEMBER",
-      });
-      await user.save();
-    }
+    await dbConnect();
 
     // Find the company and add the user as a member
     const company = await Company.findById(companyId);
@@ -240,38 +236,122 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user is already a member
-    const isAlreadyMember = company.members.some(
-      (member: { userId: { toString: () => string } }) =>
-        member.userId.toString() === user._id.toString()
-    );
+    // Get current user for email sending
+    const currentUser = await User.findOne({ email: session.user.email });
 
-    if (isAlreadyMember) {
-      return NextResponse.json(
-        { message: "User is already a member of this company" },
-        { status: 400 }
+    // Generate invite token
+    const inviteToken = crypto.randomBytes(32).toString("hex");
+    const inviteTokenHash = crypto
+      .createHash("sha256")
+      .update(inviteToken)
+      .digest("hex");
+    const inviteExpires = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7); // 7 days
+
+    // Check if user already exists
+    let user = await User.findOne({ email: normalizedEmail });
+
+    if (!user) {
+      const fallbackPassword = crypto.randomBytes(16).toString("hex");
+      const hashedPassword = await bcrypt.hash(fallbackPassword, 12);
+
+      user = new User({
+        name: safeName,
+        email: normalizedEmail,
+        password: hashedPassword,
+        role: role || "MEMBER",
+        needsPasswordReset: true,
+        inviteToken: inviteTokenHash,
+        inviteExpires,
+        pendingCompanyId: company._id,
+      });
+      await user.save();
+    } else {
+      const memberRecord = company.members.find(
+        (member: any) =>
+          (member.userId?.toString?.() || member.userId?._id?.toString?.() || member.userId?.toString()) ===
+          user._id.toString()
       );
+
+      if (memberRecord && memberRecord.status !== "PENDING") {
+        return NextResponse.json(
+          { message: "User is already a member of this company" },
+          { status: 400 }
+        );
+      }
+
+      user.inviteToken = inviteTokenHash;
+      user.inviteExpires = inviteExpires;
+      user.pendingCompanyId = company._id;
+      if (!user.name && safeName) {
+        user.name = safeName;
+      }
+      await user.save();
     }
 
-    // Add user to company members
-    company.members.push({
-      userId: user._id,
-      role: role || "MEMBER",
-      joinedAt: new Date(),
-    });
+    // Upsert membership as pending
+    const existingMemberIndex = company.members.findIndex(
+      (member: any) =>
+        (member.userId?.toString?.() || member.userId?._id?.toString?.() || member.userId?.toString()) ===
+        user._id.toString()
+    );
+
+    if (existingMemberIndex === -1) {
+      company.members.push({
+        userId: user._id,
+        role: role || "MEMBER",
+        joinedAt: new Date(),
+        status: "PENDING",
+        invitedBy: currentUser?._id,
+        inviteToken: inviteTokenHash,
+        inviteExpires,
+      });
+    } else {
+      company.members[existingMemberIndex].status = "PENDING";
+      if (role) {
+        company.members[existingMemberIndex].role = role;
+      }
+      company.members[existingMemberIndex].invitedBy = currentUser?._id;
+      company.members[existingMemberIndex].inviteToken = inviteTokenHash;
+      company.members[existingMemberIndex].inviteExpires = inviteExpires;
+    }
 
     await company.save();
 
-    // Get current user for email sending
-    const currentUser = await User.findOne({ email: session.user.email });
-    
+    const inviteBaseUrl = (() => {
+      if (process.env.NEXTAUTH_URL) {
+        try {
+          return new URL(process.env.NEXTAUTH_URL).toString();
+        } catch (error) {
+          console.warn("Invalid NEXTAUTH_URL provided, falling back to request origin");
+        }
+      }
+
+      const originHeader = request.headers.get("origin");
+      if (originHeader) {
+        return originHeader;
+      }
+
+      const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+      const forwardedHost =
+        request.headers.get("x-forwarded-host") ||
+        request.headers.get("host") ||
+        "localhost:3000";
+
+      return `${forwardedProto}://${forwardedHost}`;
+    })();
+
+    const inviteUrl = new URL(
+      `/auth/invite?token=${inviteToken}`,
+      inviteBaseUrl
+    ).toString();
+
     // Send invitation email
     try {
       await emailService.sendProjectInvitation(
-        email,
+        normalizedEmail,
         `${company.name} Team`,
         currentUser?.name || "Team Admin",
-        `${process.env.NEXTAUTH_URL}/dashboard/team?invited=true`, // Replace with actual invite URL
+        inviteUrl,
         currentUser?._id?.toString()
       );
     } catch (emailError) {

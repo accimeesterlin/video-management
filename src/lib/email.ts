@@ -2,6 +2,7 @@ import * as nodemailer from "nodemailer";
 import { Resend } from "resend";
 import { connectToDatabase } from "./mongodb";
 import { ObjectId } from "mongodb";
+import { SendMailClient } from "zeptomail";
 
 export interface EmailOptions {
   to: string | string[];
@@ -67,19 +68,22 @@ export class EmailService {
     const credentials = integration.credentials;
     
     switch (provider) {
-      case 'zeptomail':
+      case 'zeptomail': {
+        const regionRaw = (credentials?.['Region'] || '').toString().toLowerCase().trim();
+        const domain = regionRaw === 'in' ? 'in' : 'com';
+        const zeptoClient = new SendMailClient({
+          token: credentials['API Key'],
+          domain,
+          url: `https://api.zeptomail.${domain}/`,
+        });
+
         return {
-          transporter: nodemailer.createTransport({
-            host: 'smtp.zeptomail.com',
-            port: 587,
-            secure: false,
-            auth: {
-              user: 'emailapikey',
-              pass: credentials['API Key']
-            }
-          }),
-          fromEmail: credentials['From Email']
+          zeptoClient,
+          fromEmail: credentials['From Email'],
+          fromName: credentials['From Name'] || undefined,
+          provider: 'zeptomail'
         };
+      }
 
       case 'sendgrid':
         return {
@@ -123,15 +127,26 @@ export class EmailService {
       if (userId) {
         const integration = await this.getStoredEmailProvider(userId);
         if (integration) {
-          const { transporter, fromEmail } = await this.createTransportFromIntegration(integration);
-          return await transporter.sendMail({
-            from: fromEmail,
-            to: options.to,
-            subject: options.subject,
-            text: options.text,
-            html: options.html,
-            attachments: options.attachments,
-          });
+          const transportConfig = await this.createTransportFromIntegration(integration);
+          
+          if (transportConfig.provider === 'zeptomail') {
+            return await this.sendWithZeptoMail(
+              options,
+              transportConfig.zeptoClient,
+              transportConfig.fromEmail,
+              transportConfig.fromName
+            );
+          } else {
+            const { transporter, fromEmail } = transportConfig as any;
+            return await transporter.sendMail({
+              from: fromEmail,
+              to: options.to,
+              subject: options.subject,
+              text: options.text,
+              html: options.html,
+              attachments: options.attachments,
+            });
+          }
         }
       }
 
@@ -187,6 +202,29 @@ export class EmailService {
     return info;
   }
 
+  private async sendWithZeptoMail(options: EmailOptions, zeptoClient: any, fromEmail: string, fromName?: string) {
+    try {
+      const recipients = Array.isArray(options.to) ? options.to : [options.to];
+      
+      const mailData = {
+        from: {
+          address: fromEmail,
+          name: fromName || "Video Management Platform"
+        },
+        to: recipients.map(email => ({ email_address: { address: email } })),
+        subject: options.subject,
+        textbody: options.text || "",
+        htmlbody: options.html || options.text || ""
+      };
+
+      const response = await zeptoClient.sendMail(mailData);
+      return response;
+    } catch (error) {
+      console.error("ZeptoMail sending error:", error);
+      throw error;
+    }
+  }
+
   async sendProjectInvitation(
     email: string,
     projectName: string,
@@ -219,12 +257,12 @@ export class EmailService {
             </p>
             
             <p style="font-size: 16px; margin-bottom: 30px;">
-              Click the button below to join the project and start collaborating:
+              Click the button below to accept the invitation and set up your access:
             </p>
             
             <div style="text-align: center; margin: 30px 0;">
               <a href="${inviteUrl}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; transition: transform 0.2s;">
-                Join Project
+                Accept Invitation
               </a>
             </div>
             
@@ -244,10 +282,60 @@ export class EmailService {
 
     return this.sendEmail({
       to: email,
-      subject: `You've been invited to join "${projectName}"`,
+      subject: `Invitation to collaborate on "${projectName}"`,
       html,
-      text: `Hi! ${inviterName} has invited you to collaborate on the video editing project "${projectName}". Join the project: ${inviteUrl}`,
+      text: `Hi! ${inviterName} has invited you to collaborate on the video editing project "${projectName}". Accept the invitation and set up your account here: ${inviteUrl}`,
     }, userId);
+  }
+
+  async sendPasswordResetEmail(
+    email: string,
+    recipientName: string,
+    resetUrl: string
+  ) {
+    const safeName = recipientName || "there";
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Password Reset</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); padding: 36px 24px; text-align: center; border-radius: 12px 12px 0 0;">
+            <h1 style="color: white; margin: 0; font-size: 26px;">Reset your password</h1>
+          </div>
+          <div style="background: white; padding: 32px 28px; border-radius: 0 0 12px 12px; box-shadow: 0 4px 24px rgba(37, 99, 235, 0.15);">
+            <p style="font-size: 16px; margin-bottom: 20px;">Hi ${safeName},</p>
+            <p style="font-size: 16px; margin-bottom: 20px;">
+              We received a request to reset the password for your Video Editor Pro account. If this was you, click the button below to create a new password.
+            </p>
+            <div style="text-align: center; margin: 32px 0;">
+              <a href="${resetUrl}" style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 999px; font-weight: 600; display: inline-block;">Reset password</a>
+            </div>
+            <p style="font-size: 14px; color: #666; margin-bottom: 24px;">
+              This link will expire in 1 hour. If you didn't request a password reset, you can safely ignore this email—your password will remain unchanged.
+            </p>
+            <p style="font-size: 12px; color: #888;">
+              If the button doesn't work, paste this link into your browser:<br />
+              <a href="${resetUrl}" style="color: #2563eb; word-break: break-all;">${resetUrl}</a>
+            </p>
+            <p style="font-size: 14px; color: #666; margin-top: 30px;">
+              Stay creative,<br />
+              The Video Editor Pro Team
+            </p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    return this.sendEmail({
+      to: email,
+      subject: "Reset your Video Editor Pro password",
+      html,
+      text: `Hi ${safeName}, use the link below to reset your Video Editor Pro password. This link expires in 1 hour. ${resetUrl}`,
+    });
   }
 
   async sendProjectStatusUpdate(

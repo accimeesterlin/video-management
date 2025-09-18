@@ -44,9 +44,22 @@ export async function POST(request: NextRequest) {
     let videoData;
     
     const resolvedThumbnailKey = thumbnailKey || null;
-    const resolvedThumbnailUrl = resolvedThumbnailKey
+    let resolvedThumbnailUrl = resolvedThumbnailKey
       ? getS3VideoUrl(resolvedThumbnailKey)
       : thumbnailUrl || null;
+      
+    // If no thumbnail provided, generate a default one
+    if (!resolvedThumbnailUrl) {
+      if (isExternalLink && url) {
+        // Try to generate thumbnail for external links
+        resolvedThumbnailUrl = await generateExternalThumbnail(url, platform);
+      }
+      
+      // If still no thumbnail, use a default placeholder
+      if (!resolvedThumbnailUrl) {
+        resolvedThumbnailUrl = generateDefaultThumbnail();
+      }
+    }
 
     // Use provided companyId or default to user's companyId
     const finalCompanyId = companyId || user.companyId;
@@ -108,7 +121,7 @@ export async function POST(request: NextRequest) {
         filename: videoKey.split('/').pop() || "",
         s3Key: videoKey,
         url: getS3VideoUrl(videoKey),
-        duration: duration || 0,
+        duration: duration || await extractVideoDuration(videoKey) || 0,
         size: size || 0,
         status: "processing",
         project: project || "General",
@@ -230,5 +243,153 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Videos fetch error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+async function generateExternalThumbnail(url: string, platform?: string | null): Promise<string | null> {
+  try {
+    const normalizedPlatform = (platform || "").toLowerCase();
+    let inferredPlatform = normalizedPlatform;
+    
+    // Auto-detect platform if not provided
+    if (!inferredPlatform) {
+      if (url.includes("youtu.be") || url.includes("youtube.com")) {
+        inferredPlatform = "youtube";
+      } else if (url.includes("vimeo.com")) {
+        inferredPlatform = "vimeo";
+      } else if (url.includes("dailymotion.com") || url.includes("dai.ly")) {
+        inferredPlatform = "dailymotion";
+      }
+    }
+
+    switch (inferredPlatform) {
+      case "youtube": {
+        const id = extractYouTubeId(url);
+        if (id) {
+          return `https://img.youtube.com/vi/${id}/maxresdefault.jpg`;
+        }
+        break;
+      }
+      case "vimeo": {
+        const id = extractVimeoId(url);
+        if (id) {
+          try {
+            const response = await fetch(`https://vimeo.com/api/v2/video/${id}.json`);
+            if (response.ok) {
+              const data = await response.json();
+              return data[0]?.thumbnail_large || null;
+            }
+          } catch (error) {
+            console.error("Error fetching Vimeo thumbnail:", error);
+          }
+        }
+        break;
+      }
+      case "dailymotion": {
+        const id = extractDailymotionId(url);
+        if (id) {
+          return `https://www.dailymotion.com/thumbnail/video/${id}`;
+        }
+        break;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error generating external thumbnail:", error);
+    return null;
+  }
+}
+
+function generateDefaultThumbnail(): string {
+  // Create a default thumbnail as SVG data URL
+  const width = 640;
+  const height = 360;
+  
+  const svgContent = `
+    <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#1f2937;stop-opacity:1" />
+          <stop offset="100%" style="stop-color:#374151;stop-opacity:1" />
+        </linearGradient>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#bg)"/>
+      <g transform="translate(${width/2}, ${height/2})">
+        <circle cx="0" cy="0" r="30" fill="#3b82f6" opacity="0.8"/>
+        <polygon points="-12,-15 -12,15 18,0" fill="white"/>
+      </g>
+      <text x="${width/2}" y="${height - 30}" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="14" opacity="0.9">
+        Video Thumbnail
+      </text>
+    </svg>
+  `;
+  
+  const encodedSvg = encodeURIComponent(svgContent);
+  return `data:image/svg+xml,${encodedSvg}`;
+}
+
+function extractYouTubeId(url: string): string | null {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+function extractVimeoId(url: string): string | null {
+  const patterns = [
+    /vimeo\.com\/(\d+)/,
+    /vimeo\.com\/video\/(\d+)/,
+    /player\.vimeo\.com\/video\/(\d+)/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+function extractDailymotionId(url: string): string | null {
+  const patterns = [
+    /dailymotion\.com\/video\/([^_?#]+)/,
+    /dai\.ly\/([^_?#]+)/,
+    /dailymotion\.com\/embed\/video\/([^_?#]+)/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+async function extractVideoDuration(videoKey: string): Promise<number | null> {
+  try {
+    // In a real implementation, you would:
+    // 1. Use AWS MediaConvert, AWS Lambda with FFmpeg, or a similar service
+    // 2. Extract video metadata including duration
+    // 3. Return the duration in seconds
+    
+    // For now, we'll simulate duration extraction
+    // In production, you could use:
+    // - AWS Elemental MediaInfo
+    // - FFprobe via AWS Lambda
+    // - A third-party video processing service
+    
+    console.log(`Extracting duration for video: ${videoKey}`);
+    
+    // Placeholder: return null to indicate duration should be set manually
+    // or provided by the client during upload
+    return null;
+  } catch (error) {
+    console.error("Error extracting video duration:", error);
+    return null;
   }
 }

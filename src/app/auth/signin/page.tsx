@@ -218,6 +218,17 @@ export default function SignInPage() {
                   )}
                 </button>
               </div>
+              {!isSignUp && (
+                <div className="flex justify-end mt-2">
+                  <button
+                    type="button"
+                    onClick={() => router.push("/auth/forgot")}
+                    className="text-sm text-blue-600 hover:text-blue-500"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
             </div>
 
             {isSignUp && (

@@ -32,6 +32,17 @@ const companySchema = new mongoose.Schema({
         type: Date,
         default: Date.now,
       },
+      status: {
+        type: String,
+        enum: ["ACTIVE", "PENDING"],
+        default: "ACTIVE",
+      },
+      invitedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+      inviteToken: String,
+      inviteExpires: Date,
     },
   ],
   createdAt: {

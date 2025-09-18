@@ -27,6 +27,22 @@ const userSchema = new mongoose.Schema({
   phone: String,
   location: String,
   bio: String,
+  companyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Company",
+  },
+  needsPasswordReset: {
+    type: Boolean,
+    default: false,
+  },
+  inviteToken: String,
+  inviteExpires: Date,
+  pendingCompanyId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Company",
+  },
+  passwordResetToken: String,
+  passwordResetExpires: Date,
   createdAt: {
     type: Date,
     default: Date.now,

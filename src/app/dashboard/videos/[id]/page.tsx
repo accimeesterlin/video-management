@@ -153,10 +153,27 @@ export default function VideoDetailPage() {
     tags: "",
     status: "",
     project: "",
+    duration: "",
     isPublic: false,
   });
   const [editingComment, setEditingComment] = useState<string | null>(null);
   const [editCommentText, setEditCommentText] = useState("");
+  const [showClipModal, setShowClipModal] = useState(false);
+  const [clipStartTime, setClipStartTime] = useState<string>("");
+  const [clipEndTime, setClipEndTime] = useState<string>("");
+  const [clipTitle, setClipTitle] = useState("");
+  const [clipDescription, setClipDescription] = useState("");
+  const [creatingClip, setCreatingClip] = useState(false);
+  const [clips, setClips] = useState<any[]>([]);
+  const [showClipsModal, setShowClipsModal] = useState(false);
+  const [editingClip, setEditingClip] = useState<any>(null);
+  const [editClipTitle, setEditClipTitle] = useState("");
+  const [editClipDescription, setEditClipDescription] = useState("");
+  const [previewClip, setPreviewClip] = useState<any | null>(null);
+  const [showClipPreviewModal, setShowClipPreviewModal] = useState(false);
+  const videoPlayerRef = useRef<HTMLVideoElement | null>(null);
+  const clipPlaybackEndRef = useRef<number | null>(null);
+  const clipTimeUpdateHandlerRef = useRef<((event: Event) => void) | null>(null);
 
   // Modal refs for click outside detection
   const editModalRef = useRef<HTMLDivElement>(null);
@@ -169,10 +186,25 @@ export default function VideoDetailPage() {
   }, [session, params.id]);
 
   useEffect(() => {
+    if (video) {
+      fetchClips();
+    }
+  }, [video]);
+
+  useEffect(() => {
     if (session) {
       fetchAvailableTags();
     }
   }, [session]);
+
+  useEffect(() => {
+    return () => {
+      const player = videoPlayerRef.current;
+      if (player && clipTimeUpdateHandlerRef.current) {
+        player.removeEventListener("timeupdate", clipTimeUpdateHandlerRef.current);
+      }
+    };
+  }, []);
 
   // Handle click outside modals
   useEffect(() => {
@@ -191,12 +223,12 @@ export default function VideoDetailPage() {
       }
     };
 
-    if (showEditModal || showShareModal || showThumbnailsModal || showResourcesModal || showVersionsModal || showShortsModal) {
+    if (showEditModal || showShareModal || showThumbnailsModal || showResourcesModal || showVersionsModal || showShortsModal || showClipModal || showClipsModal) {
       document.addEventListener("mousedown", handleClickOutside);
       return () =>
         document.removeEventListener("mousedown", handleClickOutside);
     }
-  }, [showEditModal, showShareModal, showThumbnailsModal, showResourcesModal, showVersionsModal, showShortsModal]);
+  }, [showEditModal, showShareModal, showThumbnailsModal, showResourcesModal, showVersionsModal, showShortsModal, showClipModal, showClipsModal]);
 
   const fetchVideo = async (videoId: string) => {
     try {
@@ -390,6 +422,7 @@ export default function VideoDetailPage() {
       tags: "",
       status: video.status,
       project: video.project,
+      duration: video.duration ? formatDuration(video.duration) : "",
       isPublic: video.isPublic || false,
     });
     setEditSelectedTags(video.tags || []);
@@ -408,6 +441,10 @@ export default function VideoDetailPage() {
         new Set([...editSelectedTags, ...manualTags])
       );
 
+      const parsedDuration = editFormData.duration
+        ? parseTimeInput(editFormData.duration) ?? video.duration
+        : video.duration;
+      
       const response = await fetch(`/api/videos/${video._id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -417,6 +454,7 @@ export default function VideoDetailPage() {
           tags: combinedTags,
           status: editFormData.status,
           project: editFormData.project,
+          duration: parsedDuration,
           isPublic: editFormData.isPublic,
         }),
       });
@@ -430,6 +468,7 @@ export default function VideoDetailPage() {
                 description: editFormData.description,
                 status: editFormData.status,
                 project: editFormData.project,
+                duration: parsedDuration,
                 isPublic: editFormData.isPublic,
                 tags: combinedTags,
                 projectInfo: prev.projectInfo
@@ -831,26 +870,722 @@ export default function VideoDetailPage() {
 
     setGeneratingThumbnail(true);
     try {
-      const response = await fetch(`/api/videos/${video._id}/generate-thumbnail`, {
-        method: 'POST',
+      let handledLocally = false;
+
+      if (!video.isExternalLink && video.url && video.s3Key) {
+        try {
+          const thumbnailData = await captureThumbnailFromVideo(video.url);
+          const thumbnailUploadResponse = await fetch('/api/videos/thumbnails', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              videoKey: video.s3Key,
+              contentType: thumbnailData.contentType,
+            }),
+          });
+
+          if (!thumbnailUploadResponse.ok) {
+            const uploadError = await thumbnailUploadResponse.json().catch(() => ({}));
+            throw new Error(uploadError.error || 'Failed to prepare thumbnail upload');
+          }
+
+          const { uploadUrl, thumbnailKey } = await thumbnailUploadResponse.json();
+          await uploadBlobToPresignedUrl(thumbnailData.blob, uploadUrl, thumbnailData.contentType);
+
+          const updateResponse = await fetch(`/api/videos/${video._id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ thumbnailKey }),
+          });
+
+          if (!updateResponse.ok) {
+            const updateError = await updateResponse.json().catch(() => ({}));
+            throw new Error(updateError.error || 'Failed to update video thumbnail');
+          }
+
+          toast.success('Thumbnail generated successfully');
+          await fetchVideo(video._id);
+          handledLocally = true;
+        } catch (localError) {
+          console.warn('Client-side thumbnail generation failed, falling back to server route:', localError);
+          toast.warning('Local thumbnail capture failed. Falling back to server thumbnail.');
+        }
+      }
+
+      if (!handledLocally) {
+        const response = await fetch(`/api/videos/${video._id}/generate-thumbnail`, {
+          method: 'POST',
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          toast.success('Thumbnail generated successfully');
+          setVideo((prev) => (prev ? { ...prev, thumbnail: result.thumbnail } : prev));
+          await fetchVideo(video._id);
+        } else {
+          const error = await response.json();
+          toast.error(error.message || 'Failed to generate thumbnail');
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unexpected error occurred';
+      toast.error(`Error generating thumbnail: ${errorMessage}`);
+    } finally {
+      setGeneratingThumbnail(false);
+    }
+  };
+
+  const parseTimeInput = (timeInput: string): number | null => {
+    if (!timeInput || !timeInput.trim()) {
+      return null;
+    }
+
+    const trimmed = timeInput.trim();
+
+    if (trimmed.includes(':')) {
+      const segments = trimmed.split(':').map((segment) => segment.trim());
+      const numericSegments = segments.map((segment) => Number.parseInt(segment, 10));
+
+      if (numericSegments.some((value) => Number.isNaN(value) || value < 0)) {
+        return null;
+      }
+
+      // Support HH:MM:SS (or MM:SS)
+      const reversed = numericSegments.reverse();
+      const seconds = reversed[0] ?? 0;
+      const minutes = reversed[1] ?? 0;
+      const hours = reversed[2] ?? 0;
+      return hours * 3600 + minutes * 60 + seconds;
+    }
+
+    const value = Number.parseFloat(trimmed);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  };
+
+  const slugify = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80) || 'clip';
+
+  const uploadBlobToPresignedUrl = async (
+    blob: Blob,
+    uploadUrl: string,
+    contentType: string
+  ) => {
+    const response = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': contentType,
+      },
+      body: blob,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`Failed to upload file: ${response.status} ${text}`);
+    }
+  };
+
+  const captureThumbnailFromVideo = async (sourceUrl: string) => {
+    return new Promise<{ blob: Blob; previewUrl: string; contentType: string }>((resolve, reject) => {
+      const videoElement = document.createElement('video');
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+
+      if (!context) {
+        reject(new Error('Unable to create drawing context for thumbnail generation'));
+        return;
+      }
+
+      videoElement.crossOrigin = 'anonymous';
+      videoElement.preload = 'auto';
+      videoElement.muted = true;
+      (videoElement as any).playsInline = true;
+      videoElement.src = sourceUrl;
+
+      const cleanup = () => {
+        videoElement.pause();
+        if (videoElement.src.startsWith('blob:')) {
+          URL.revokeObjectURL(videoElement.src);
+        }
+      };
+
+      videoElement.addEventListener('loadedmetadata', () => {
+        const capturePoint = Math.min(Math.max(videoElement.duration * 0.1, 1), videoElement.duration - 0.5);
+        canvas.width = videoElement.videoWidth || 1280;
+        canvas.height = videoElement.videoHeight || 720;
+        videoElement.currentTime = capturePoint;
+      });
+
+      videoElement.addEventListener('seeked', () => {
+        try {
+          context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                cleanup();
+                reject(new Error('Canvas returned an empty blob when capturing thumbnail'));
+                return;
+              }
+              const previewUrl = URL.createObjectURL(blob);
+              resolve({
+                blob,
+                previewUrl,
+                contentType: blob.type || 'image/jpeg',
+              });
+              cleanup();
+            },
+            'image/jpeg',
+            0.85
+          );
+        } catch (error) {
+          cleanup();
+          reject(error instanceof Error ? error : new Error('Failed to render thumbnail frame'));
+        }
+      });
+
+      videoElement.addEventListener('error', (event) => {
+        cleanup();
+        reject(new Error('Unable to load video for thumbnail generation'));
+      });
+    });
+  };
+
+  const createClipBlobFromVideo = async (
+    sourceUrl: string,
+    startSeconds: number,
+    endSeconds: number
+  ): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const videoElement = document.createElement('video');
+      const canvas = document.createElement('canvas');
+      let context: CanvasRenderingContext2D | null = null;
+      let recorder: MediaRecorder | null = null;
+      let stream: MediaStream | null = null;
+      const chunks: Blob[] = [];
+      let stopTimer: number | undefined;
+      let useCanvasFallback = false;
+      let objectUrl: string | null = null;
+      let attemptedBlobSource = false;
+      let handleVideoError: (() => void) | null = null;
+
+      videoElement.crossOrigin = 'anonymous';
+      videoElement.preload = 'auto';
+      videoElement.muted = true;
+      (videoElement as any).playsInline = true;
+
+      const durationMs = Math.max((endSeconds - startSeconds) * 1000, 500);
+
+      const cleanup = () => {
+        videoElement.pause();
+        if (handleVideoError) {
+          videoElement.removeEventListener('error', handleVideoError);
+        }
+        videoElement.removeAttribute('src');
+        videoElement.load();
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+        }
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+          stream = null;
+        }
+        if (stopTimer !== undefined) {
+          window.clearTimeout(stopTimer);
+          stopTimer = undefined;
+        }
+      };
+
+      const ensureContext = () => {
+        if (!context) {
+          context = canvas.getContext('2d');
+        }
+        if (!context) {
+          throw new Error('Unable to create canvas context for clip generation');
+        }
+        return context;
+      };
+
+      const stopRecording = () => {
+        if (recorder && recorder.state !== 'inactive') {
+          recorder.stop();
+        }
+      };
+
+      const attachRecorder = () => {
+        if (!stream) {
+          throw new Error('Recording stream is not ready');
+        }
+
+        const preferredMime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+          ? 'video/webm;codecs=vp9'
+          : MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+          ? 'video/webm;codecs=vp8'
+          : 'video/webm';
+
+        recorder = new MediaRecorder(stream, {
+          mimeType: preferredMime,
+          videoBitsPerSecond: 2_000_000,
+        });
+
+        recorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            chunks.push(event.data);
+          }
+        };
+
+        recorder.onstop = () => {
+          try {
+            cleanup();
+          } finally {
+            if (!chunks.length) {
+              reject(new Error('Clip recording resulted in an empty file'));
+              return;
+            }
+            resolve(new Blob(chunks, { type: recorder?.mimeType || 'video/webm' }));
+          }
+        };
+
+        recorder.onerror = (event) => {
+          cleanup();
+          reject(new Error(`Clip recording failed: ${event.error?.message || 'Unknown error'}`));
+        };
+      };
+
+      const drawFrame = () => {
+        if (!useCanvasFallback || !recorder || recorder.state === 'inactive') {
+          return;
+        }
+        try {
+          const ctx = ensureContext();
+          ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+        } catch (error) {
+          console.error('Canvas draw failed while recording clip:', error);
+          stopRecording();
+          return;
+        }
+        requestAnimationFrame(drawFrame);
+      };
+
+      const startRecording = () => {
+        if (!recorder) {
+          attachRecorder();
+        }
+        recorder?.start();
+        videoElement.play().catch(() => {
+          /* ignore autoplay restrictions */
+        });
+        if (useCanvasFallback) {
+          requestAnimationFrame(drawFrame);
+        }
+
+        stopTimer = window.setTimeout(() => {
+          stopRecording();
+        }, durationMs);
+
+        const handleTimeUpdate = () => {
+          if (videoElement.currentTime >= endSeconds - 0.05) {
+            stopRecording();
+          }
+        };
+
+        videoElement.addEventListener('timeupdate', handleTimeUpdate);
+        recorder?.addEventListener('stop', () => {
+          videoElement.removeEventListener('timeupdate', handleTimeUpdate);
+        });
+      };
+
+      videoElement.addEventListener('loadedmetadata', () => {
+        canvas.width = videoElement.videoWidth || 1280;
+        canvas.height = videoElement.videoHeight || 720;
+        videoElement.currentTime = Math.max(startSeconds, 0);
+      });
+
+      videoElement.addEventListener('seeked', () => {
+        try {
+          if (stream) {
+            stream.getTracks().forEach((track) => track.stop());
+          }
+
+          const directCapture = typeof videoElement.captureStream === 'function'
+            ? videoElement.captureStream(30)
+            : typeof (videoElement as any).mozCaptureStream === 'function'
+            ? (videoElement as any).mozCaptureStream(30)
+            : null;
+
+          if (directCapture && directCapture.getVideoTracks().length > 0) {
+            useCanvasFallback = false;
+            stream = directCapture;
+          } else {
+            useCanvasFallback = true;
+            ensureContext();
+            stream = canvas.captureStream(30);
+          }
+
+          attachRecorder();
+          startRecording();
+        } catch (error) {
+          cleanup();
+          reject(error instanceof Error ? error : new Error('Unable to initialise clip recording'));
+        }
+      });
+
+      const fetchSourceAsBlob = async () => {
+        const response = await fetch(sourceUrl, {
+          mode: 'cors',
+          credentials: 'omit',
+        });
+
+        if (!response.ok) {
+          throw new Error(`Video download failed: ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        objectUrl = URL.createObjectURL(blob);
+        videoElement.src = objectUrl;
+      };
+
+      handleVideoError = async () => {
+        if (!attemptedBlobSource) {
+          attemptedBlobSource = true;
+          try {
+            await fetchSourceAsBlob();
+            return;
+          } catch (error) {
+            console.error('Clip source fallback failed:', error);
+            cleanup();
+            reject(error instanceof Error ? error : new Error('Unable to prepare video for clip generation'));
+            return;
+          }
+        }
+
+        cleanup();
+        reject(new Error('Failed to load video for clip generation'));
+      };
+
+      videoElement.addEventListener('error', handleVideoError);
+
+      const prepareSource = async () => {
+        try {
+          videoElement.src = sourceUrl;
+          const parsedSource = new URL(sourceUrl, window.location.href);
+          if (parsedSource.origin !== window.location.origin) {
+            try {
+              attemptedBlobSource = true;
+              await fetchSourceAsBlob();
+            } catch (error) {
+              attemptedBlobSource = false;
+              console.warn('Cross-origin clip source fetch failed, falling back to direct video element:', error);
+            }
+          }
+        } catch (error) {
+          try {
+            attemptedBlobSource = true;
+            await fetchSourceAsBlob();
+          } catch (fetchError) {
+            cleanup();
+            reject(fetchError instanceof Error ? fetchError : new Error('Unable to prepare video for clip generation'));
+          }
+        }
+      };
+
+      prepareSource();
+    });
+  };
+
+
+  const buildExternalClipUrl = (baseUrl: string, startTime: number, endTime: number) => {
+    try {
+      const url = new URL(baseUrl);
+      const hostname = url.hostname.toLowerCase();
+
+      if (hostname.includes("youtube.com") || hostname.includes("youtu.be")) {
+        url.searchParams.set("start", Math.floor(startTime).toString());
+        url.searchParams.set("end", Math.floor(endTime).toString());
+        return url.toString();
+      }
+
+      if (hostname.includes("vimeo.com")) {
+        url.hash = `t=${Math.floor(startTime)}s`;
+        return url.toString();
+      }
+
+      const base = url.toString().split("#")[0];
+      return `${base}#t=${Math.floor(startTime)},${Math.floor(endTime)}`;
+    } catch (error) {
+      console.error("Failed to build external clip URL:", error);
+      return baseUrl;
+    }
+  };
+
+  const handleCreateClip = async () => {
+    if (!video || !clipStartTime || !clipEndTime) {
+      toast.error("Please provide start and end times for the clip");
+      return;
+    }
+
+    const startSeconds = parseTimeInput(clipStartTime);
+    const endSeconds = parseTimeInput(clipEndTime);
+
+    if (startSeconds === null || endSeconds === null) {
+      toast.error("Please provide valid start and end times (e.g. 0:00 and 0:10)");
+      return;
+    }
+
+    if (startSeconds >= endSeconds) {
+      toast.error("Invalid time range. End time must be later than start time.");
+      return;
+    }
+
+    if (video.duration && endSeconds > video.duration) {
+      toast.error(`End time cannot exceed video duration (${formatDuration(video.duration)})`);
+      return;
+    }
+
+    setCreatingClip(true);
+    try {
+      let generatedClipKey: string | null = null;
+      let generatedClipFilename: string | null = null;
+      let generatedClipMime: string | null = null;
+      let generatedClipSize = 0;
+
+      if (video.url && !video.isExternalLink) {
+        try {
+          if (typeof (HTMLCanvasElement.prototype as any).captureStream === 'function' && 'MediaRecorder' in window) {
+            const clipBlob = await createClipBlobFromVideo(video.url, startSeconds, endSeconds);
+            const detectedMime = clipBlob.type || 'video/webm';
+            generatedClipMime = detectedMime.startsWith('video/webm')
+              ? 'video/webm'
+              : detectedMime;
+            generatedClipFilename = `${slugify(video.title || 'video')}-clip-${Date.now()}.webm`;
+            generatedClipSize = clipBlob.size;
+
+            const uploadUrlResponse = await fetch('/api/videos/upload-url', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                filename: generatedClipFilename,
+                contentType: generatedClipMime,
+                fileSize: clipBlob.size,
+              }),
+            });
+
+            if (!uploadUrlResponse.ok) {
+              const uploadError = await uploadUrlResponse.json().catch(() => ({}));
+              throw new Error(uploadError.error || 'Failed to obtain clip upload URL');
+            }
+
+            const { uploadUrl, videoKey } = await uploadUrlResponse.json();
+            await uploadBlobToPresignedUrl(clipBlob, uploadUrl, generatedClipMime);
+            generatedClipKey = videoKey;
+          } else {
+            toast.warning('Clip recording is not supported in this browser. Creating a reference clip instead.');
+          }
+        } catch (clipError) {
+          console.error('Clip generation failed:', clipError);
+          toast.warning('Unable to generate a standalone clip file. Created a reference clip instead.');
+        }
+      } else if (video.isExternalLink) {
+        // External videos can't be captured client-side; rely on reference clipping.
+      }
+
+      const response = await fetch(`/api/videos/${video._id}/clips`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          startTime: startSeconds,
+          endTime: endSeconds,
+          title: clipTitle || `Clip from ${video.title}`,
+          description: clipDescription || `Clip from ${startSeconds}s to ${endSeconds}s`,
+          clipKey: generatedClipKey,
+          clipFilename: generatedClipFilename,
+          clipMimeType: generatedClipMime,
+          clipSize: generatedClipSize,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to create clip');
+      }
+
+      await fetchClips();
+      toast.success('Clip created successfully!');
+      setShowClipModal(false);
+      setClipStartTime('');
+      setClipEndTime('');
+      setClipTitle('');
+      setClipDescription('');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unexpected error occurred';
+      toast.error(`Error creating clip: ${errorMessage}`);
+    } finally {
+      setCreatingClip(false);
+    }
+  };
+
+  const fetchClips = async () => {
+    if (!video) return;
+    
+    try {
+      const response = await fetch(`/api/videos/${video._id}/clips`);
+      if (response.ok) {
+        const clipsData = await response.json();
+        setClips(clipsData);
+      }
+    } catch (error) {
+      console.error("Error fetching clips:", error);
+    }
+  };
+
+  const handleEditClip = (clip: any) => {
+    setEditingClip(clip);
+    setEditClipTitle(clip.title);
+    setEditClipDescription(clip.description);
+  };
+
+  const handleSaveClipEdit = async () => {
+    if (!editingClip) return;
+
+    try {
+      const response = await fetch(`/api/videos/${video._id}/clips/${editingClip._id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editClipTitle,
+          description: editClipDescription,
+        }),
       });
 
       if (response.ok) {
-        const result = await response.json();
-        toast.success('Thumbnail generated successfully');
-        setVideo((prev) => prev ? {
-          ...prev,
-          thumbnail: result.thumbnail,
-        } : prev);
-        fetchVideo(video._id);
+        toast.success("Clip updated successfully");
+        setEditingClip(null);
+        setEditClipTitle("");
+        setEditClipDescription("");
+        await fetchClips();
       } else {
-        const error = await response.json();
-        toast.error(error.message || 'Failed to generate thumbnail');
+        toast.error("Failed to update clip");
       }
     } catch (error) {
-      toast.error('Error generating thumbnail');
-    } finally {
-      setGeneratingThumbnail(false);
+      console.error("Error updating clip:", error);
+      toast.error("Error updating clip");
+    }
+  };
+
+  const handleCancelClipEdit = () => {
+    setEditingClip(null);
+    setEditClipTitle("");
+    setEditClipDescription("");
+  };
+
+  const handlePlayClip = (clip: any) => {
+    if (clip?.s3Key && clip?.clipUrl) {
+      setPreviewClip(clip);
+      setShowClipPreviewModal(true);
+      return;
+    }
+
+    const baseUrl = clip.clipUrl as string;
+    const startTime = Math.max(0, Number(clip.startTime) || 0);
+    const endTimeRaw = Number(clip.endTime);
+    const fallbackDuration = typeof clip.duration === "number" ? clip.duration : 0;
+    const computedEndTime = !Number.isFinite(endTimeRaw)
+      ? startTime + Math.max(fallbackDuration, 1)
+      : endTimeRaw;
+    const safeEndTime = Math.max(startTime, computedEndTime);
+
+    if (clip.isExternalLink) {
+      const clipUrl = buildExternalClipUrl(baseUrl, startTime, safeEndTime);
+      window.open(clipUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    const player = videoPlayerRef.current;
+
+    if (!player) {
+      toast.error("Video player is not ready yet. Try again in a moment.");
+      return;
+    }
+
+    const endTime = video?.duration
+      ? Math.min(safeEndTime, video.duration)
+      : safeEndTime;
+
+    const startPlayback = () => {
+      if (clipTimeUpdateHandlerRef.current) {
+        player.removeEventListener("timeupdate", clipTimeUpdateHandlerRef.current);
+      }
+
+      const onTimeUpdate = () => {
+        if (
+          clipPlaybackEndRef.current !== null &&
+          player.currentTime >= clipPlaybackEndRef.current - 0.1
+        ) {
+          player.pause();
+          player.currentTime = clipPlaybackEndRef.current;
+          clipPlaybackEndRef.current = null;
+          if (clipTimeUpdateHandlerRef.current) {
+            player.removeEventListener("timeupdate", clipTimeUpdateHandlerRef.current);
+            clipTimeUpdateHandlerRef.current = null;
+          }
+        }
+      };
+
+      player.pause();
+      clipPlaybackEndRef.current = endTime;
+      player.currentTime = startTime;
+      clipTimeUpdateHandlerRef.current = onTimeUpdate;
+      player.addEventListener("timeupdate", onTimeUpdate);
+
+      player.play().catch(() => {
+        toast.error("Unable to start clip playback");
+      });
+    };
+
+    if (player.readyState >= 1) {
+      startPlayback();
+    } else {
+      const handleLoadedMetadata = () => {
+        player.removeEventListener("loadedmetadata", handleLoadedMetadata);
+        startPlayback();
+      };
+
+      player.addEventListener("loadedmetadata", handleLoadedMetadata);
+      player.load();
+    }
+  };
+
+  const handleDeleteClip = async (clipId: string) => {
+    if (!video || !clipId) {
+      return;
+    }
+
+    const confirmed = window.confirm("Delete this clip? This action cannot be undone.");
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/videos/${video._id}/clips/${clipId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || "Failed to delete clip");
+      }
+
+      toast.success("Clip deleted successfully");
+      if (editingClip?._id === clipId) {
+        handleCancelClipEdit();
+      }
+      await fetchClips();
+    } catch (error) {
+      console.error("Error deleting clip:", error);
+      const message = error instanceof Error ? error.message : "Error deleting clip";
+      toast.error(message);
     }
   };
 
@@ -1035,45 +1770,48 @@ export default function VideoDetailPage() {
 
     if (video.url) {
       return (
-        <video
-          controls
-          className="w-full h-full rounded-lg"
-          poster={
-            video.thumbnail ||
-            `https://via.placeholder.com/640x360/1f2937/ffffff?text=${encodeURIComponent(
-              video.title || "Video"
-            )}`
-          }
-          preload="metadata"
-          onError={(e) => {
-            console.error("Video load error:", e, "URL:", video.url);
-            const videoElement = e.target as HTMLVideoElement;
-            const container = videoElement.parentElement;
-            if (container) {
-              container.innerHTML = `
-                <div class="w-full h-full bg-gray-800 rounded-lg flex flex-col items-center justify-center text-white p-8">
-                  <svg class="w-16 h-16 mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                  </svg>
-                  <h3 class="text-lg font-medium mb-2">Video Preview Unavailable</h3>
-                  <p class="text-gray-400 text-center text-sm">The video file cannot be loaded at this time. You can try downloading it or contact support.</p>
-                  <button onclick="window.location.reload()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-                    Retry
-                  </button>
-                </div>
-              `;
+        <div className="flex h-full w-full items-center justify-center">
+          <video
+            ref={videoPlayerRef}
+            controls
+            className="h-full w-full max-h-full max-w-full rounded-lg object-contain"
+            poster={
+              video.thumbnail ||
+              `https://via.placeholder.com/640x360/1f2937/ffffff?text=${encodeURIComponent(
+                video.title || "Video"
+              )}`
             }
-          }}
-          onLoadStart={() => console.log("Video loading started")}
-          onCanPlay={() => console.log("Video can start playing")}
-          onLoadedData={() => console.log("Video data loaded")}
-        >
-          <source src={video.url} type="video/mp4" />
-          <source src={video.url} type="video/webm" />
-          <source src={video.url} type="video/avi" />
-          <source src={video.url} type="video/mov" />
-          Your browser does not support the video tag.
-        </video>
+            preload="metadata"
+            onError={(e) => {
+              console.error("Video load error:", e, "URL:", video.url);
+              const videoElement = e.target as HTMLVideoElement;
+              const container = videoElement.parentElement;
+              if (container) {
+                container.innerHTML = `
+                  <div class="w-full h-full bg-gray-800 rounded-lg flex flex-col items-center justify-center text-white p-8">
+                    <svg class="w-16 h-16 mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                    </svg>
+                    <h3 class="text-lg font-medium mb-2">Video Preview Unavailable</h3>
+                    <p class="text-gray-400 text-center text-sm">The video file cannot be loaded at this time. You can try downloading it or contact support.</p>
+                    <button onclick="window.location.reload()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+                      Retry
+                    </button>
+                  </div>
+                `;
+              }
+            }}
+            onLoadStart={() => console.log("Video loading started")}
+            onCanPlay={() => console.log("Video can start playing")}
+            onLoadedData={() => console.log("Video data loaded")}
+          >
+            <source src={video.url} type="video/mp4" />
+            <source src={video.url} type="video/webm" />
+            <source src={video.url} type="video/avi" />
+            <source src={video.url} type="video/mov" />
+            Your browser does not support the video tag.
+          </video>
+        </div>
       );
     }
 
@@ -1142,17 +1880,6 @@ export default function VideoDetailPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleGenerateThumbnail}
-            disabled={generatingThumbnail}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${generatingThumbnail ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">
-              {generatingThumbnail ? 'Generating...' : 'Generate Thumbnail'}
-            </span>
-          </Button>
           <Button variant="outline" size="sm" onClick={handleDownload}>
             <Download className="h-4 w-4 mr-2" />
             <span className="hidden sm:inline">Download</span>
@@ -1160,6 +1887,10 @@ export default function VideoDetailPage() {
           <Button variant="outline" size="sm" onClick={handleShare}>
             <Share2 className="h-4 w-4 mr-2" />
             <span className="hidden sm:inline">Share</span>
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowClipModal(true)}>
+            <Scissors className="h-4 w-4 mr-2" />
+            <span className="hidden sm:inline">Create Clip</span>
           </Button>
           <Button variant="outline" size="sm" onClick={handleEditVideo}>
             <Edit className="h-4 w-4 mr-2" />
@@ -1580,6 +2311,25 @@ export default function VideoDetailPage() {
                     <Video className="h-4 w-4 mr-2" />
                     Shorts ({video.shorts?.length || 0})
                   </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start mb-1"
+                    onClick={() => setShowClipsModal(true)}
+                  >
+                    <Play className="h-4 w-4 mr-2" />
+                    View Clips ({clips.length || 0})
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start mb-1"
+                    onClick={handleGenerateThumbnail}
+                    disabled={generatingThumbnail}
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${generatingThumbnail ? 'animate-spin' : ''}`} />
+                    {generatingThumbnail ? 'Generating...' : 'Generate Thumbnail'}
+                  </Button>
                 </div>
               </div>
             </CardContent>
@@ -1695,7 +2445,7 @@ export default function VideoDetailPage() {
                 ) : null}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Status
@@ -1733,6 +2483,25 @@ export default function VideoDetailPage() {
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter project name"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Duration
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.duration}
+                    onChange={(e) =>
+                      setEditFormData((prev) => ({
+                        ...prev,
+                        duration: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="MM:SS or seconds"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Format: MM:SS or seconds</p>
                 </div>
               </div>
 
@@ -2350,6 +3119,350 @@ export default function VideoDetailPage() {
                   </label>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Clip Modal */}
+      {showClipModal && video && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[80]">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-xl font-semibold text-gray-900">Create Video Clip</h3>
+              <button
+                onClick={() => setShowClipModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start">
+                  <Scissors className="h-5 w-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <div className="text-sm">
+                    <p className="text-blue-800 font-medium">Create a Clip</p>
+                    <p className="text-blue-700 mt-1">
+                      Specify start and end times to create a clip from this video.
+                      {video.duration && ` Video duration: ${formatDuration(video.duration)}`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Start Time *
+                  </label>
+                  <input
+                    type="text"
+                    value={clipStartTime}
+                    onChange={(e) => setClipStartTime(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="0:00 or 0"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Format: MM:SS or seconds</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    End Time *
+                  </label>
+                  <input
+                    type="text"
+                    value={clipEndTime}
+                    onChange={(e) => setClipEndTime(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder={video.duration ? formatDuration(video.duration) : "1:00"}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Format: MM:SS or seconds</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Clip Title (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={clipTitle}
+                  onChange={(e) => setClipTitle(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder={`Clip from ${video.title}`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Description (Optional)
+                </label>
+                <textarea
+                  value={clipDescription}
+                  onChange={(e) => setClipDescription(e.target.value)}
+                  rows={3}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  placeholder="Describe what this clip contains..."
+                />
+              </div>
+
+              {clipStartTime && clipEndTime && (() => {
+                const start = parseTimeInput(clipStartTime);
+                const end = parseTimeInput(clipEndTime);
+                if (start === null || end === null) {
+                  return null;
+                }
+                const duration = Math.max(0, end - start);
+                return (
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Clip Duration:</span>{" "}
+                    {formatDuration(Math.max(1, Math.round(duration)))}
+                  </p>
+                </div>
+                );
+              })()}
+            </div>
+
+            <div className="flex space-x-3 p-6 border-t border-gray-100">
+              <Button
+                onClick={() => setShowClipModal(false)}
+                variant="outline"
+                className="flex-1"
+                disabled={creatingClip}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateClip}
+                disabled={creatingClip || !clipStartTime || !clipEndTime}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {creatingClip ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Scissors className="h-4 w-4 mr-2" />
+                    Create Clip
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Clips Modal */}
+      {showClipsModal && video && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[80]">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-100">
+              <h3 className="text-xl font-semibold text-gray-900">Video Clips</h3>
+              <button
+                onClick={() => setShowClipsModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              {clips.length > 0 ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {clips.map((clip: any) => (
+                      <div
+                        key={clip._id}
+                        className="border border-gray-200 rounded-xl p-4 flex flex-col gap-3"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-3 flex-1">
+                            <div className="mt-1">
+                              <Scissors className="h-5 w-5 text-blue-500" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              {editingClip?._id === clip._id ? (
+                                <div className="space-y-2">
+                                  <input
+                                    type="text"
+                                    value={editClipTitle}
+                                    onChange={(e) => setEditClipTitle(e.target.value)}
+                                    className="w-full px-2 py-1 text-sm font-semibold border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Clip title"
+                                  />
+                                  <textarea
+                                    value={editClipDescription}
+                                    onChange={(e) => setEditClipDescription(e.target.value)}
+                                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                    rows={2}
+                                    placeholder="Clip description"
+                                  />
+                                </div>
+                              ) : (
+                                <div>
+                                  <h4
+                                    className="font-semibold text-gray-900 text-sm break-words line-clamp-2"
+                                    title={clip.title}
+                                  >
+                                    {clip.title}
+                                  </h4>
+                                  <p className="text-sm text-gray-600 mt-1 line-clamp-2">{clip.description}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="text-xs text-gray-500 space-y-1">
+                          <div className="flex justify-between">
+                            <span>Start: {formatDuration(Math.round(clip.startTime))}</span>
+                            <span>End: {formatDuration(Math.round(clip.endTime))}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Duration: {formatDuration(Math.round(clip.duration))}</span>
+                            <span>Created: {new Date(clip.createdAt).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                          {editingClip?._id === clip._id ? (
+                            <>
+                              <Button
+                                size="sm"
+                                onClick={handleSaveClipEdit}
+                                className="bg-green-600 hover:bg-green-700 text-white flex-1"
+                              >
+                                <Save className="h-4 w-4 mr-1" />
+                                Save
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={handleCancelClipEdit}
+                                className="flex-1"
+                              >
+                                <X className="h-4 w-4 mr-1" />
+                                Cancel
+                              </Button>
+                            </>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handlePlayClip(clip)}
+                                className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700"
+                                aria-label="Play clip"
+                                title="Play clip"
+                              >
+                                <Play className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleEditClip(clip)}
+                                className="h-8 w-8 p-0 text-gray-600 hover:text-gray-800"
+                                aria-label="Edit clip"
+                                title="Edit clip"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleDeleteClip(clip._id)}
+                                className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
+                                aria-label="Delete clip"
+                                title="Delete clip"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <Scissors className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Clips Yet</h3>
+                  <p className="text-gray-500 mb-6">Create clips from this video by specifying start and end times</p>
+                  <Button
+                    onClick={() => {
+                      setShowClipsModal(false);
+                      setShowClipModal(true);
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    <Scissors className="h-4 w-4 mr-2" />
+                    Create First Clip
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClipPreviewModal && previewClip && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[90]">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {previewClip.title || 'Clip preview'}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  Duration: {formatDuration(Math.round(previewClip.duration || 0))}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowClipPreviewModal(false);
+                  setPreviewClip(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="bg-black">
+              <video
+                key={previewClip._id}
+                src={previewClip.clipUrl}
+                controls
+                autoPlay
+                className="w-full h-full max-h-[70vh] object-contain bg-black"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-3 p-4 border-t border-gray-100">
+              <Button
+                variant="outline"
+                onClick={() =>
+                  previewClip.clipUrl &&
+                  window.open(previewClip.clipUrl, '_blank', 'noopener,noreferrer')
+                }
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Open
+              </Button>
+              <Button
+                onClick={() =>
+                  previewClip.clipUrl &&
+                  triggerFileDownload(
+                    previewClip.clipUrl,
+                    previewClip.filename || `${slugify(video?.title || 'clip')}.webm`
+                  )
+                }
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download
+              </Button>
             </div>
           </div>
         </div>

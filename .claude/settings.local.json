@@ -7,7 +7,10 @@
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
       "Bash(yarn build)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(npm run dev:*)",
+      "Bash(node test-s3.js)",
+      "Bash(rm:*)"
     ],
     "defaultMode": "acceptEdits"
   }

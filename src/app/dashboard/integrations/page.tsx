@@ -80,6 +80,7 @@ const credentialRequirements: {[key: string]: {label: string, type: string, requ
     {label: 'API Key', type: 'password', required: true, placeholder: 'Your ZeptoMail API key'},
     {label: 'From Email', type: 'email', required: true, placeholder: 'Verified sender email address'},
     {label: 'From Name', type: 'text', required: false, placeholder: 'Sender name (optional)'},
+    {label: 'Region', type: 'text', required: false, placeholder: 'API region (com or in, default: com)'},
   ],
   'mailchimp': [
     {label: 'API Key', type: 'password', required: true, placeholder: 'Your MailChimp API key'},

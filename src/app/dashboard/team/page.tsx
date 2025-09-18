@@ -119,7 +119,7 @@ export default function TeamPage() {
       });
 
       if (response.ok) {
-        toast.success("Team member invited successfully");
+        toast.success("Invitation sent! Your teammate can set up their account from the email link.");
         setShowInviteModal(false);
         setFormData({
           name: "",
@@ -292,15 +292,15 @@ export default function TeamPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium text-gray-600 flex items-center">
               <Users className="h-4 w-4 mr-2 text-yellow-500" />
-              On Leave
+              Pending Invites
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-gray-900">
-              {teamMembers.filter((m) => m.status === "On Leave").length}
+              {teamMembers.filter((m) => m.status === "Pending").length}
             </div>
             <p className="text-sm text-gray-500 mt-1">
-              Temporarily unavailable
+              Awaiting acceptance
             </p>
           </CardContent>
         </Card>
@@ -367,15 +367,20 @@ export default function TeamPage() {
                         {member.name.charAt(0)}
                       </span>
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900 text-lg">
-                        {member.name}
-                      </h3>
-                      <p className="text-sm text-gray-500 capitalize">
-                        {member.role.toLowerCase()}
-                      </p>
-                    </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-900 text-lg">
+                      {member.name}
+                    </h3>
+                    <p className="text-sm text-gray-500 capitalize">
+                      {member.role.toLowerCase()}
+                    </p>
+                    {member.status === "Pending" && (
+                      <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-yellow-100 text-yellow-700 mt-1">
+                        Pending invite
+                      </span>
+                    )}
                   </div>
+                </div>
                   <div className="flex space-x-2">
                     <Button
                       variant="ghost"
@@ -420,7 +425,9 @@ export default function TeamPage() {
                   <div className="flex items-center text-sm text-gray-500">
                     <Calendar className="h-4 w-4 mr-2 text-gray-400" />
                     <span>
-                      Joined {new Date(member.joinedDate).toLocaleDateString()}
+                      {member.status === "Pending"
+                        ? `Invited ${new Date(member.joinedDate).toLocaleDateString()}`
+                        : `Joined ${new Date(member.joinedDate).toLocaleDateString()}`}
                     </span>
                   </div>
 

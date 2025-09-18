@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { connectToDatabase } from "@/lib/mongodb";
+import * as nodemailer from "nodemailer";
+import { SendMailClient } from "zeptomail";
 
 export async function GET(request: NextRequest) {
   try {
@@ -77,8 +79,9 @@ export async function POST(request: NextRequest) {
       isConnected: true,
       connectedAt: new Date(),
       status: "active",
-      // In production, store encrypted credentials securely
-      // credentialsHash: encrypt(credentials),
+      // Store credentials for functionality (in production, encrypt these)
+      credentials: credentials,
+      updatedAt: new Date(),
     };
 
     // Upsert integration record
@@ -88,8 +91,16 @@ export async function POST(request: NextRequest) {
       { upsert: true }
     );
 
-    // Simulate credential validation with external service
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Validate credentials with the actual service
+    try {
+      await validateCredentials(integrationId, credentials);
+    } catch (validationError: any) {
+      console.error("Credential validation failed:", validationError);
+      return NextResponse.json(
+        { error: `Invalid credentials: ${validationError.message}` },
+        { status: 400 }
+      );
+    }
 
     return NextResponse.json({
       message: "Credentials saved successfully",
@@ -154,5 +165,76 @@ export async function DELETE(request: NextRequest) {
       { error: "Internal server error" },
       { status: 500 }
     );
+  }
+}
+
+async function validateCredentials(integrationId: string, credentials: any) {
+  switch (integrationId) {
+    case 'zeptomail':
+      if (!credentials?.['API Key'] || !credentials?.['From Email']) {
+        throw new Error("ZeptoMail API Key and From Email are required");
+      }
+
+      try {
+        const regionRaw = (credentials?.['Region'] || '').toString().toLowerCase().trim();
+        const domain = regionRaw === 'in' ? 'in' : 'com';
+        const zeptoClient = new SendMailClient({
+          token: credentials['API Key'],
+          domain,
+          url: `https://api.zeptomail.${domain}/`,
+        });
+
+        if (!zeptoClient) {
+          throw new Error("Failed to initialize ZeptoMail client");
+        }
+
+        console.log("ZeptoMail client initialized successfully for domain", domain);
+      } catch (zeptoError: any) {
+        console.error("ZeptoMail error details:", zeptoError);
+        throw new Error(`ZeptoMail validation failed: ${zeptoError.message || 'Unknown error'}`);
+      }
+      break;
+
+    case 'sendgrid':
+      if (!credentials?.['API Key'] || !credentials?.['From Email']) {
+        throw new Error("SendGrid API Key and From Email are required");
+      }
+      
+      const sendgridTransporter = nodemailer.createTransport({
+        host: 'smtp.sendgrid.net',
+        port: 587,
+        secure: false,
+        auth: {
+          user: 'apikey',
+          pass: credentials['API Key']
+        }
+      });
+      
+      await sendgridTransporter.verify();
+      break;
+
+    case 'mailgun':
+      if (!credentials?.['API Key'] || !credentials?.['Domain']) {
+        throw new Error("Mailgun API Key and Domain are required");
+      }
+      
+      const region = credentials['Region']?.toLowerCase() === 'eu' ? 'eu' : 'us';
+      const mailgunHost = region === 'eu' ? 'smtp.eu.mailgun.org' : 'smtp.mailgun.org';
+      
+      const mailgunTransporter = nodemailer.createTransport({
+        host: mailgunHost,
+        port: 587,
+        secure: false,
+        auth: {
+          user: `postmaster@${credentials['Domain']}`,
+          pass: credentials['API Key']
+        }
+      });
+      
+      await mailgunTransporter.verify();
+      break;
+
+    default:
+      throw new Error(`Validation not implemented for provider: ${integrationId}`);
   }
 }

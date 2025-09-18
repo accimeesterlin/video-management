@@ -369,6 +369,18 @@ export async function PUT(
               .filter((t: string) => t)
           : body.tags;
     }
+    if (body.duration !== undefined) {
+      updateData.duration = typeof body.duration === "number" 
+        ? body.duration 
+        : parseFloat(body.duration) || 0;
+    }
+    if (body.thumbnailKey) {
+      updateData.thumbnailKey = body.thumbnailKey;
+      updateData.thumbnail = getS3VideoUrl(body.thumbnailKey);
+    }
+    if (body.thumbnail) {
+      updateData.thumbnail = body.thumbnail;
+    }
 
     await db
       .collection("videos")

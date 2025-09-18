@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -78,6 +78,8 @@ export default function VideosPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState("");
+  const [uploadPaused, setUploadPaused] = useState(false);
+  const [pausePending, setPausePending] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [uploadMode, setUploadMode] = useState<'file' | 'link'>('file');
@@ -104,6 +106,9 @@ export default function VideosPage() {
   });
   const [thumbnailErrors, setThumbnailErrors] = useState<Record<string, boolean>>({});
   const [lastUsedProject, setLastUsedProject] = useState<string>("");
+  const pauseRequestedRef = useRef(false);
+  const resumeResolverRef = useRef<(() => void) | null>(null);
+  const currentUploadRequestRef = useRef<XMLHttpRequest | null>(null);
 
   useEffect(() => {
     if (session) {
@@ -112,6 +117,7 @@ export default function VideosPage() {
       fetchTags();
       fetchCompanies();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   // Reset to first page when filters change
@@ -121,21 +127,36 @@ export default function VideosPage() {
 
   const fetchVideos = async () => {
     try {
-      const response = await fetch("/api/videos", { cache: "no-store" });
+      const timestamp = Date.now();
+      const response = await fetch(`/api/videos?t=${timestamp}`, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      });
       if (response.ok) {
         const data = await response.json();
-        setVideos(data);
+        const normalizedVideos = Array.isArray(data)
+          ? data.map((video: any) => ({
+              ...video,
+              comments: Array.isArray(video?.comments) ? video.comments : [],
+            }))
+          : [];
+        setVideos(normalizedVideos);
       } else {
         toast.error("Failed to fetch videos");
       }
     } catch (error) {
+      console.error("Error fetching videos:", error);
       toast.error("Error fetching videos");
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     try {
       const response = await fetch("/api/projects");
       if (response.ok) {
@@ -166,7 +187,7 @@ export default function VideosPage() {
       console.error("Error fetching projects:", error);
       toast.error("Error loading projects. Please check your connection.");
     }
-  };
+  }, [lastUsedProject, formData.project]);
 
   const fetchTags = async () => {
     try {
@@ -347,16 +368,33 @@ export default function VideosPage() {
       });
 
       if (response.ok) {
-        const newVideo = await response.json();
-        setVideos((prev) => [newVideo, ...prev]);
+        const newVideoResponse = await response.json();
+        const normalizedNewVideo = {
+          ...newVideoResponse,
+          comments: Array.isArray(newVideoResponse?.comments)
+            ? newVideoResponse.comments
+            : [],
+          tags: Array.isArray(newVideoResponse?.tags)
+            ? newVideoResponse.tags
+            : [],
+        };
+
+        // Immediately add the video to the list
+        setVideos((prev) => {
+          const updated = [normalizedNewVideo, ...prev];
+          console.log(`Added external video ${normalizedNewVideo.title} to list. Total videos: ${updated.length}. Tags:`, normalizedNewVideo.tags);
+          return updated;
+        });
+        setCurrentPage(1);
+
         toast.success("Video link added successfully");
-        if ((formData.project || newVideo.project) && formData.project !== lastUsedProject) {
-          setLastUsedProject(formData.project || newVideo.project);
+        if ((formData.project || normalizedNewVideo.project) && formData.project !== lastUsedProject) {
+          setLastUsedProject(formData.project || normalizedNewVideo.project);
         }
-        if (newVideo?._id) {
-          await refreshVideoAssets(newVideo._id);
+        if (normalizedNewVideo?._id) {
+          await refreshVideoAssets(normalizedNewVideo._id);
         }
-        
+
         // Reset form
         setVideoLink('');
         setFormData({
@@ -668,32 +706,144 @@ export default function VideosPage() {
   };
 
   const uploadToS3 = async (file: File, uploadUrl: string, onProgress?: (progress: number) => void) => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
+    console.log('Starting S3 upload:', { fileName: file.name, fileSize: file.size, uploadUrl: uploadUrl.substring(0, 100) + '...' });
+    
+    // First try XMLHttpRequest for progress tracking
+    try {
+      return await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        currentUploadRequestRef.current = xhr;
+        
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable && onProgress) {
+            const progress = Math.round((event.loaded / event.total) * 100);
+            onProgress(progress);
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          currentUploadRequestRef.current = null;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(xhr.response);
+          } else {
+            const message = xhr.responseText || xhr.statusText || 'Unexpected error';
+            reject(new Error(`Upload failed with status ${xhr.status}: ${message}`));
+          }
+        });
+
+        xhr.addEventListener('error', (event) => {
+          currentUploadRequestRef.current = null;
+          console.error('XHR Error details:', {
+            status: xhr.status,
+            statusText: xhr.statusText,
+            readyState: xhr.readyState,
+            responseText: xhr.responseText,
+            uploadUrl: uploadUrl?.substring(0, 100) + '...',
+            fileSize: file.size,
+            fileName: file.name,
+            event
+          });
+          
+          // Check if it's a CORS issue
+          if (xhr.status === 0 && xhr.readyState === 4) {
+            reject(new Error(`Upload failed due to CORS policy. Please check S3 bucket CORS configuration. Add ${window.location.origin} to AllowedOrigins.`));
+          } else {
+            reject(new Error(`Upload failed due to a network error (Status: ${xhr.status || 'unknown'}, ${xhr.statusText || 'No status text'})`));
+          }
+        });
+
+        xhr.addEventListener('abort', () => {
+          currentUploadRequestRef.current = null;
+          reject(new Error('Upload aborted'));
+        });
+
+        xhr.addEventListener('timeout', () => {
+          currentUploadRequestRef.current = null;
+          reject(new Error('Upload timed out'));
+        });
+
+        xhr.open('PUT', uploadUrl);
+        xhr.timeout = 5 * 60 * 1000; // 5 minutes timeout
+        xhr.setRequestHeader('Content-Type', file.type);
+        xhr.send(file);
+      });
+    } catch (xhrError) {
+      console.warn('XMLHttpRequest failed, falling back to fetch:', xhrError);
       
-      xhr.upload.addEventListener('progress', (event) => {
-        if (event.lengthComputable && onProgress) {
-          const progress = Math.round((event.loaded / event.total) * 100);
-          onProgress(progress);
+      // Fallback to fetch API without progress tracking
+      try {
+        console.log('Attempting fetch upload fallback...');
+        const response = await fetch(uploadUrl, {
+          method: 'PUT',
+          body: file,
+          headers: {
+            'Content-Type': file.type,
+          },
+        });
+
+        console.log('Fetch upload response:', { status: response.status, statusText: response.statusText, ok: response.ok });
+
+        if (!response.ok) {
+          const responseText = await response.text().catch(() => 'Unable to read response');
+          console.error('Fetch upload failed response:', responseText);
+          throw new Error(`Upload failed with status ${response.status}: ${response.statusText}. Response: ${responseText}`);
         }
-      });
 
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(xhr.response);
-        } else {
-          reject(new Error(`Upload failed with status ${xhr.status}`));
+        return response;
+      } catch (fetchError) {
+        console.error('Fetch upload error:', fetchError);
+        
+        // Check if it's a CORS issue
+        if (fetchError.message.includes('CORS') || fetchError.message.includes('fetch')) {
+          throw new Error(`Upload failed due to CORS policy. Please check S3 bucket CORS configuration. Add ${window.location.origin} to AllowedOrigins. Original error: ${fetchError.message}`);
         }
-      });
+        
+        throw new Error(`Both XMLHttpRequest and fetch failed: ${fetchError.message}`);
+      }
+    }
+  };
 
-      xhr.addEventListener('error', () => {
-        reject(new Error('Upload failed'));
-      });
-
-      xhr.open('PUT', uploadUrl);
-      xhr.setRequestHeader('Content-Type', file.type);
-      xhr.send(file);
+  const waitForResume = () =>
+    new Promise<void>((resolve) => {
+      resumeResolverRef.current = resolve;
     });
+
+  const handlePauseUploads = () => {
+    if (!uploading || pauseRequestedRef.current || uploadPaused) {
+      return;
+    }
+    pauseRequestedRef.current = true;
+    setPausePending(true);
+    setUploadStatus('Pausing uploads after the current file...');
+    toast.info('Upload will pause after the current file finishes.');
+  };
+
+  const handleResumeUploads = () => {
+    if (!uploadPaused && !pauseRequestedRef.current) {
+      return;
+    }
+    pauseRequestedRef.current = false;
+    setPausePending(false);
+    setUploadPaused(false);
+    setUploadStatus('Resuming uploads...');
+    const resolver = resumeResolverRef.current;
+    resumeResolverRef.current = null;
+    if (resolver) {
+      resolver();
+    }
+    toast.success('Resuming uploads');
+  };
+
+  const waitIfPaused = async () => {
+    if (!pauseRequestedRef.current) {
+      return;
+    }
+    setUploadPaused(true);
+    setPausePending(false);
+    setUploadStatus('Uploads paused. Resume to continue.');
+    await waitForResume();
+    setUploadStatus('');
+    setUploadPaused(false);
   };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -706,6 +856,10 @@ export default function VideosPage() {
       return;
     }
 
+    pauseRequestedRef.current = false;
+    resumeResolverRef.current = null;
+    setPausePending(false);
+    setUploadPaused(false);
     setUploading(true);
     setUploadProgress(0);
     setShowUploadModal(false);
@@ -716,9 +870,36 @@ export default function VideosPage() {
       let completedFiles = 0;
 
       for (let i = 0; i < selectedFiles.length; i++) {
+        await waitIfPaused();
+
         const originalFile = selectedFiles[i];
         let fileToUpload = originalFile;
         const fileIndex = i + 1;
+        
+        // Create a temporary video entry to show upload progress
+        const tempVideoId = `temp-${Date.now()}-${i}`;
+        const tempVideo = {
+          _id: tempVideoId,
+          title: formData.title || originalFile.name.replace(/\.[^/.]+$/, ""),
+          description: formData.description,
+          filename: originalFile.name,
+          duration: 0,
+          size: originalFile.size,
+          status: "uploading",
+          project: formData.project || "General",
+          uploadedBy: "",
+          uploadedByName: "You",
+          uploadedAt: new Date().toISOString(),
+          thumbnail: null,
+          url: null,
+          uploadProgress: 0,
+          tags: Array.isArray(selectedTags) ? [...selectedTags] : [],
+          comments: [],
+        };
+        
+        // Add temp video to list
+        setVideos((prev) => [tempVideo, ...prev]);
+        setCurrentPage(1);
         
         setUploadStatus(`Preparing ${originalFile.name} (${fileIndex}/${totalFiles})...`);
 
@@ -770,11 +951,39 @@ export default function VideosPage() {
 
         if (!uploadUrlResponse.ok) {
           const error = await uploadUrlResponse.json();
-          toast.error(error.error || "Failed to get upload URL");
+          console.error('Upload URL request failed:', error);
+          toast.error(`Failed to get upload URL for ${originalFile.name}: ${error.error || 'Unknown error'}`);
+          
+          // Update temp video to show error status
+          setVideos((prev) => prev.map(video => 
+            video._id === tempVideoId 
+              ? { ...video, status: "failed", error: error.error || 'Failed to get upload URL' }
+              : video
+          ));
           continue;
         }
 
         const { uploadUrl, videoKey } = await uploadUrlResponse.json();
+        
+        console.log('Upload URL response:', { 
+          uploadUrl: uploadUrl?.substring(0, 100) + '...', 
+          videoKey,
+          fileSize: fileToUpload.size,
+          fileName: originalFile.name 
+        });
+        
+        if (!uploadUrl || !videoKey) {
+          console.error('Invalid upload URL response:', { uploadUrl, videoKey });
+          toast.error(`Invalid upload URL response for ${originalFile.name}`);
+          
+          // Update temp video to show error status
+          setVideos((prev) => prev.map(video => 
+            video._id === tempVideoId 
+              ? { ...video, status: "failed", error: 'Invalid upload URL response' }
+              : video
+          ));
+          continue;
+        }
 
         let thumbnailKey: string | null = null;
 
@@ -816,11 +1025,24 @@ export default function VideosPage() {
 
         // Upload file to S3 with progress
         setUploadStatus(`Uploading ${fileToUpload.name} (${fileIndex}/${totalFiles})...`);
-        await uploadToS3(fileToUpload, uploadUrl, (fileProgress) => {
-          // Calculate overall progress: completed files + current file progress
-          const overallProgress = ((completedFiles * 100) + fileProgress) / totalFiles;
-          setUploadProgress(Math.round(overallProgress));
-        });
+        try {
+          await uploadToS3(fileToUpload, uploadUrl, (fileProgress) => {
+            // Calculate overall progress: completed files + current file progress
+            const overallProgress = ((completedFiles * 100) + fileProgress) / totalFiles;
+            setUploadProgress(Math.round(overallProgress));
+          });
+        } catch (uploadError) {
+          console.error('S3 upload failed:', uploadError);
+          toast.error(`Upload failed for ${originalFile.name}: ${uploadError.message}`);
+          
+          // Update temp video to show error status
+          setVideos((prev) => prev.map(video => 
+            video._id === tempVideoId 
+              ? { ...video, status: "failed", error: uploadError.message || 'Upload failed' }
+              : video
+          ));
+          continue;
+        }
 
         // Create video record in database
         setUploadStatus(`Processing ${originalFile.name} (${fileIndex}/${totalFiles})...`);
@@ -849,18 +1071,41 @@ export default function VideosPage() {
         });
 
         if (!videoResponse.ok) {
-          toast.error("Failed to create video record");
+          const errorData = await videoResponse.json();
+          console.error("Video creation failed:", errorData);
+          toast.error(`Failed to create video record for ${originalFile.name}: ${errorData.error || 'Unknown error'}`);
+          
+          // Update temp video to show error status
+          setVideos((prev) => prev.map(video => 
+            video._id === tempVideoId 
+              ? { ...video, status: "failed", error: errorData.error || 'Upload failed' }
+              : video
+          ));
           continue;
         }
 
-        const newVideo = await videoResponse.json();
+        const newVideoResponse = await videoResponse.json();
+        const normalizedNewVideo = {
+          ...newVideoResponse,
+          comments: Array.isArray(newVideoResponse?.comments)
+            ? newVideoResponse.comments
+            : [],
+          tags: Array.isArray(newVideoResponse?.tags)
+            ? newVideoResponse.tags
+            : [],
+        };
+
+        // Replace temp video with real video data
         setVideos((prev) => {
-          const filtered = prev.filter((video) => video._id !== newVideo._id);
-          return [newVideo, ...filtered];
+          const filtered = prev.filter((video) => video._id !== tempVideoId);
+          const updated = [normalizedNewVideo, ...filtered];
+          console.log(`Added video ${normalizedNewVideo.title} to list. Total videos: ${updated.length}. Tags:`, normalizedNewVideo.tags);
+          return updated;
         });
         setCurrentPage(1);
-        if (newVideo?._id) {
-          await refreshVideoAssets(newVideo._id);
+        
+        if (normalizedNewVideo?._id) {
+          await refreshVideoAssets(normalizedNewVideo._id);
         }
         if (formData.project) {
           setLastUsedProject(formData.project);
@@ -868,8 +1113,11 @@ export default function VideosPage() {
 
         completedFiles++;
         setUploadProgress(Math.round((completedFiles / totalFiles) * 100));
+
+        await waitIfPaused();
       }
 
+      console.log(`Upload completed. ${completedFiles} of ${totalFiles} files processed successfully.`);
       toast.success(`${selectedFiles.length} video(s) uploaded successfully`);
       setSelectedFiles([]);
       setSelectedTags([]);
@@ -880,15 +1128,21 @@ export default function VideosPage() {
         company: "",
         tags: "",
       });
-      await fetchVideos();
+      setCurrentPage(1);
     } catch (error) {
       console.error("Upload error:", error);
-      toast.error("Error uploading videos");
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      toast.error(`Error uploading videos: ${errorMessage}`);
     } finally {
       setUploading(false);
       setUploadProgress(0);
       setUploadStatus("");
       setCompressingFiles([]);
+      setPausePending(false);
+      setUploadPaused(false);
+      pauseRequestedRef.current = false;
+      resumeResolverRef.current = null;
+      currentUploadRequestRef.current = null;
     }
   };
 
@@ -1181,6 +1435,12 @@ export default function VideosPage() {
       )
     : videos;
 
+  // Debug logging for video visibility
+  console.log(`Total videos: ${videos.length}, Filtered videos: ${filteredVideos.length}, Selected filters: ${selectedTagFilters.length}`, {
+    selectedTagFilters,
+    videoTags: videos.length > 0 ? videos.slice(0, 3).map(v => ({ title: v.title, tags: v.tags })) : 'No videos'
+  });
+
   // Pagination logic
   const totalPages = Math.ceil(filteredVideos.length / videosPerPage);
   const startIndex = (currentPage - 1) * videosPerPage;
@@ -1394,13 +1654,13 @@ export default function VideosPage() {
           {paginatedVideos.map((video) => (
             <Card
               key={video._id}
-              className="border-0 shadow-sm bg-white hover:shadow-md transition-shadow cursor-pointer"
+              className="border-0 shadow-sm bg-white hover:shadow-md transition-shadow cursor-pointer flex h-full flex-col"
               onClick={() => handleVideoClick(video._id)}
               onMouseEnter={() => setHoveredVideo(video._id)}
               onMouseLeave={() => setHoveredVideo(null)}
             >
               <CardHeader className="pb-4">
-                <div className="relative aspect-video bg-gray-100 rounded-lg flex items-center justify-center mb-3 group">
+                <div className="relative aspect-square w-full bg-gray-100 rounded-lg flex items-center justify-center mb-3 group overflow-hidden">
                   {video.thumbnail && !thumbnailErrors[video._id] ? (
                     <img
                       src={video.thumbnail}
@@ -1582,7 +1842,7 @@ export default function VideosPage() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="pt-0">
+              <CardContent className="pt-0 mt-auto">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs text-gray-500">
                     <span className="flex items-center">
@@ -1611,7 +1871,7 @@ export default function VideosPage() {
                     >
                       {video.status}
                     </span>
-                    {video.comments.length > 0 && (
+                    {Array.isArray(video.comments) && video.comments.length > 0 && (
                       <span className="text-xs text-gray-500">
                         {video.comments.length} comment
                         {video.comments.length !== 1 ? "s" : ""}
@@ -1866,6 +2126,29 @@ export default function VideosPage() {
                       style={{ width: `${uploadProgress}%` }}
                     ></div>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={handlePauseUploads}
+                      variant="outline"
+                      size="sm"
+                      className="text-gray-700 border-gray-200 hover:bg-gray-100"
+                      disabled={pausePending || uploadPaused}
+                    >
+                      {pausePending ? 'Pausing...' : 'Pause' }
+                    </Button>
+                    <Button
+                      onClick={handleResumeUploads}
+                      variant="outline"
+                      size="sm"
+                      className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                      disabled={!uploadPaused && !pausePending}
+                    >
+                      Resume
+                    </Button>
+                  </div>
+                  {uploadPaused && (
+                    <p className="text-xs text-amber-600">Uploads paused. Click resume to continue.</p>
+                  )}
                   {uploadStatus && (
                     <p className="text-sm text-gray-600">{uploadStatus}</p>
                   )}
@@ -2360,7 +2643,7 @@ export default function VideosPage() {
                 <div className="space-y-3">
                   <h4 className="font-medium text-gray-900">Share Link</h4>
                   <div className="flex items-center space-x-2">
-                    <div className="flex-1 px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 font-mono">
+                    <div className="flex-1 px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-600 font-mono break-all overflow-x-auto">
                       {`${window.location.origin}/shared/video/${sharingVideo._id}`}
                     </div>
                     <Button
