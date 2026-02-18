@@ -129,19 +129,21 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
   };
 
   return (
-    <header className="bg-white shadow-sm border-b border-gray-100 px-4 sm:px-6 py-4 header-consistent">
+    <header className="bg-white shadow-sm border-b border-neutral-100 px-4 sm:px-6 py-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           {/* Mobile hamburger menu */}
           <button
-            className="lg:hidden p-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+            className="lg:hidden btn-ghost p-2"
             onClick={() => setSidebarOpen(!sidebarOpen)}
           >
             <Menu className="h-5 w-5" />
           </button>
+          
+          {/* Search */}
           <div ref={searchRef} className="relative">
             <form onSubmit={handleSearch}>
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-neutral-400" />
               <input
                 type="text"
                 value={searchQuery}
@@ -152,16 +154,16 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
                   }
                 }}
                 placeholder="Search projects, videos, team..."
-                className="pl-10 pr-4 py-2 w-48 sm:w-64 lg:w-80 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                className="input-modern pl-11 w-48 sm:w-64 lg:w-80"
               />
             </form>
 
             {/* Search Suggestions */}
             {showSuggestions && (suggestions.length > 0 || loading) && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-neutral-200 rounded-xl shadow-lg z-50 max-h-80 overflow-y-auto">
                 {loading ? (
                   <div className="p-4 text-center">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mx-auto"></div>
+                    <div className="loading-spinner mx-auto"></div>
                   </div>
                 ) : (
                   suggestions.map((suggestion) => {
@@ -170,14 +172,14 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
                       <div
                         key={suggestion.id}
                         onClick={() => handleSuggestionClick(suggestion)}
-                        className="flex items-center space-x-3 p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                        className="flex items-center space-x-3 p-3 hover:bg-neutral-50 cursor-pointer border-b border-neutral-100 last:border-b-0 first:rounded-t-xl last:rounded-b-xl"
                       >
-                        <Icon className="h-4 w-4 text-gray-400" />
+                        <Icon className="h-4 w-4 text-neutral-400" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">
+                          <p className="text-sm font-medium text-neutral-900 truncate">
                             {suggestion.title}
                           </p>
-                          <p className="text-xs text-gray-500 truncate">
+                          <p className="text-xs text-neutral-500 truncate">
                             {suggestion.type} • {suggestion.description}
                           </p>
                         </div>
@@ -195,9 +197,9 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
                         `/dashboard/search?q=${encodeURIComponent(searchQuery)}`
                       );
                     }}
-                    className="p-3 text-center text-sm text-blue-600 hover:bg-blue-50 cursor-pointer border-t border-gray-100"
+                    className="p-3 text-center text-sm text-brand-600 hover:bg-brand-50 cursor-pointer border-t border-neutral-100 rounded-b-xl font-medium"
                   >
-                    View all results for "{searchQuery}"
+                    View all results for &ldquo;{searchQuery}&rdquo;
                   </div>
                 )}
               </div>
@@ -205,21 +207,24 @@ export default function Header({ sidebarOpen, setSidebarOpen }: HeaderProps) {
           </div>
         </div>
 
-        <div className="flex items-center space-x-2 sm:space-x-4">
-          <button className="relative p-2 text-gray-400 hover:text-gray-600 transition-colors hover:bg-gray-50 rounded-lg">
+        {/* Right side */}
+        <div className="flex items-center space-x-3">
+          {/* Notifications */}
+          <button className="relative btn-ghost p-2">
             <Bell className="h-5 w-5" />
             <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full"></span>
           </button>
 
+          {/* User Profile */}
           <div className="flex items-center space-x-3">
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium text-gray-900">
+              <p className="text-sm font-semibold text-neutral-900">
                 {session?.user?.name}
               </p>
-              <p className="text-xs text-gray-500 capitalize">User</p>
+              <p className="text-xs text-neutral-500">Member</p>
             </div>
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
-              {session?.user?.name?.charAt(0) || "U"}
+            <div className="w-9 h-9 bg-gradient-to-br from-brand-500 to-brand-600 rounded-xl flex items-center justify-center text-white text-sm font-semibold shadow-sm">
+              {session?.user?.name?.charAt(0)?.toUpperCase() || "U"}
             </div>
           </div>
         </div>

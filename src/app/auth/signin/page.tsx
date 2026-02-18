@@ -77,33 +77,33 @@ export default function SignInPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-neutral-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center">
-          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
+          <div className="w-12 h-12 bg-gradient-to-br from-brand-500 to-brand-600 rounded-xl flex items-center justify-center shadow-sm">
             <Building2 className="h-6 w-6 text-white" />
           </div>
         </div>
-        <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
-          {isSignUp ? "Create your account" : "Sign in to your account"}
+        <h2 className="mt-6 text-center text-3xl font-bold text-neutral-900 tracking-tight">
+          {isSignUp ? "Create your account" : "Welcome to VideoFlow"}
         </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
+        <p className="mt-3 text-center text-sm text-neutral-600">
           {isSignUp ? (
             <>
               Already have an account?{" "}
               <button
                 onClick={() => setIsSignUp(false)}
-                className="font-medium text-blue-600 hover:text-blue-500"
+                className="font-semibold text-brand-600 hover:text-brand-700 transition-colors"
               >
                 Sign in
               </button>
             </>
           ) : (
             <>
-              Don't have an account?{" "}
+              Don&apos;t have an account?{" "}
               <button
                 onClick={() => setIsSignUp(true)}
-                className="font-medium text-blue-600 hover:text-blue-500"
+                className="font-semibold text-brand-600 hover:text-brand-700 transition-colors"
               >
                 Sign up
               </button>
@@ -113,19 +113,19 @@ export default function SignInPage() {
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-6 shadow-sm border border-gray-100 rounded-2xl">
+        <div className="card-modern py-8 px-6">
           <form onSubmit={handleSubmit} className="space-y-6">
             {isSignUp && (
               <div>
                 <label
                   htmlFor="name"
-                  className="block text-sm font-medium text-gray-700 mb-2"
+                  className="block text-sm font-semibold text-neutral-700 mb-2"
                 >
                   Full Name
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <User className="h-5 w-5 text-gray-400" />
+                    <User className="h-5 w-5 text-neutral-400" />
                   </div>
                   <input
                     id="name"
@@ -146,13 +146,13 @@ export default function SignInPage() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-gray-700 mb-2"
+                className="block text-sm font-semibold text-neutral-700 mb-2"
               >
                 Email address
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-gray-400" />
+                  <Mail className="h-5 w-5 text-neutral-400" />
                 </div>
                 <input
                   id="email"
@@ -266,7 +266,7 @@ export default function SignInPage() {
                 className="w-full btn-primary flex items-center justify-center"
               >
                 {isLoading ? (
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <div className="loading-spinner border-white border-t-transparent"></div>
                 ) : (
                   <>
                     {isSignUp ? "Create Account" : "Sign in"}

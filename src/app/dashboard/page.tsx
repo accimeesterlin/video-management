@@ -18,36 +18,35 @@ export default function DashboardPage() {
   const { data: session } = useSession();
 
   return (
-    <div className="space-y-6 sm:space-y-8 p-4 sm:p-6 lg:p-8">
+    <div className="space-y-8">
       {/* Hero Section */}
-      <div className="text-center px-4 sm:px-0">
-        <div className="inline-flex items-center space-x-2 bg-blue-50 text-blue-700 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-medium mb-4">
-          <Sparkles className="h-3 w-3 sm:h-4 sm:w-4" />
-          <span className="hidden sm:block">Welcome to Video Management Platform</span>
-          <span className="sm:hidden">Welcome!</span>
+      <div className="text-center">
+        <div className="inline-flex items-center space-x-2 bg-brand-50 text-brand-700 px-4 py-2 rounded-full text-sm font-medium mb-6">
+          <Sparkles className="h-4 w-4" />
+          <span>Welcome to VideoFlow</span>
         </div>
-        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
-          Welcome back, {session?.user?.name || "User"}! 👋
+        <h1 className="text-4xl lg:text-5xl font-bold text-neutral-900 mb-4 tracking-tight">
+          Welcome back, {session?.user?.name || "User"}!
         </h1>
-        <p className="text-base sm:text-lg lg:text-xl text-gray-600 max-w-2xl mx-auto px-4">
+        <p className="text-xl text-neutral-600 max-w-2xl mx-auto leading-relaxed">
           Manage your video editing projects, collaborate with your team, and
           track progress all in one place.
         </p>
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        <Card className="card-modern group hover:scale-105 transition-transform duration-200">
-          <CardHeader className="pb-3">
-            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center group-hover:bg-blue-200 transition-colors">
-              <Building2 className="h-6 w-6 text-blue-600" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Card className="card-interactive group">
+          <CardHeader className="pb-4">
+            <div className="w-12 h-12 bg-brand-100 rounded-xl flex items-center justify-center group-hover:bg-brand-200 transition-colors duration-200">
+              <Building2 className="h-6 w-6 text-brand-600" />
             </div>
           </CardHeader>
           <CardContent>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+            <h3 className="text-lg font-semibold text-neutral-900 mb-2">
               Companies
             </h3>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-neutral-600 mb-4">
               Manage your companies and teams
             </p>
             <Link href="/dashboard/companies">

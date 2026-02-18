@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import dbConnect from "@/lib/mongodb";
-import Company from "@/models/Company";
-import User from "@/models/User";
+import { connectToDatabase } from "@/lib/mongodb";
+import { ObjectId } from "mongodb";
 
 // GET - Fetch all companies for the authenticated user
 export async function GET(request: NextRequest) {
@@ -14,21 +13,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    await dbConnect();
+    const { db } = await connectToDatabase();
 
     // Get user by email first
-    const user = await User.findOne({ email: session.user?.email });
+    const user = await db.collection("users").findOne({ email: session.user?.email });
     if (!user) {
       return NextResponse.json({ message: "User not found" }, { status: 404 });
     }
 
-    // Find companies where user is a member (using ObjectId)
-    const companies = await Company.find({
+    // Find companies where user is a member
+    const companies = await db.collection("companies").find({
       $or: [
         { ownerId: user._id },
         { "members.userId": user._id }
       ]
-    }).populate("members.userId", "name email");
+    }).toArray();
 
     return NextResponse.json(companies);
   } catch (error) {
@@ -59,15 +58,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await dbConnect();
+    const { db } = await connectToDatabase();
 
     // Get user by email first
-    const user = await User.findOne({ email: session.user?.email });
+    const user = await db.collection("users").findOne({ email: session.user?.email });
     if (!user) {
       return NextResponse.json({ message: "User not found" }, { status: 404 });
     }
 
-    const company = await Company.create({
+    const companyData = {
       name,
       description,
       website,
@@ -79,14 +78,18 @@ export async function POST(request: NextRequest) {
         {
           userId: user._id,
           role: "OWNER",
+          joinedAt: new Date(),
+          status: "ACTIVE"
         },
       ],
-    });
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
 
-    // Populate the members before returning
-    const populatedCompany = await Company.findById(company._id).populate("members.userId", "name email");
+    const result = await db.collection("companies").insertOne(companyData);
+    const company = { ...companyData, _id: result.insertedId };
 
-    return NextResponse.json(populatedCompany, { status: 201 });
+    return NextResponse.json(company, { status: 201 });
   } catch (error) {
     console.error("Error creating company:", error);
     return NextResponse.json(
@@ -108,16 +111,16 @@ export async function PUT(request: NextRequest) {
     const { name, description, website, industry, size, location, founded } =
       await request.json();
 
-    await dbConnect();
+    const { db } = await connectToDatabase();
 
     // Get user by email first
-    const user = await User.findOne({ email: session.user?.email });
+    const user = await db.collection("users").findOne({ email: session.user?.email });
     if (!user) {
       return NextResponse.json({ message: "User not found" }, { status: 404 });
     }
 
     // Find user's company
-    const company = await Company.findOne({
+    const company = await db.collection("companies").findOne({
       $or: [
         { ownerId: user._id },
         { "members.userId": user._id }
@@ -130,7 +133,7 @@ export async function PUT(request: NextRequest) {
 
     // Check if user has permission to update (owner or admin)
     const isOwner = company.ownerId.toString() === user._id.toString();
-    const userMember = company.members.find(
+    const userMember = (company.members || []).find(
       (member: any) => member.userId.toString() === user._id.toString()
     );
     const isAdmin = userMember && (userMember.role === "ADMIN" || userMember.role === "OWNER");
@@ -152,11 +155,12 @@ export async function PUT(request: NextRequest) {
     if (location !== undefined) updateData.location = location;
     if (founded !== undefined) updateData.founded = founded;
 
-    const updatedCompany = await Company.findByIdAndUpdate(
-      company._id,
-      updateData,
-      { new: true }
-    ).populate("members.userId", "name email");
+    await db.collection("companies").updateOne(
+      { _id: company._id },
+      { $set: updateData }
+    );
+
+    const updatedCompany = await db.collection("companies").findOne({ _id: company._id });
 
     return NextResponse.json(updatedCompany);
   } catch (error) {

@@ -10,7 +10,8 @@
       "Bash(grep:*)",
       "Bash(npm run dev:*)",
       "Bash(node test-s3.js)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "WebFetch(domain:calendly.com)"
     ],
     "defaultMode": "acceptEdits"
   }

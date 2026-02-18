@@ -65,68 +65,72 @@ export default function Sidebar({ sidebarOpen, setSidebarOpen }: SidebarProps) {
           className="fixed inset-0 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         >
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-75" />
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" />
         </div>
       )}
 
       {/* Sidebar */}
-      <div className={`flex flex-col w-64 bg-white shadow-sm border-r border-gray-100 h-screen fixed left-0 top-0 z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+      <div className={`flex flex-col w-64 bg-white shadow-lg border-r border-neutral-200 h-screen fixed left-0 top-0 z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
-      <div className="flex items-center justify-between h-16 px-4 border-b border-gray-100">
-        <h1 className="text-lg lg:text-xl font-bold text-gray-900">Video Management</h1>
-        <button
-          className="lg:hidden p-2 rounded-md text-gray-400 hover:text-gray-600"
-          onClick={() => setSidebarOpen(false)}
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      <nav className="flex-1 px-4 py-6 space-y-6">
-        {navigationGroups.map((group) => (
-          <div key={group.name}>
-            <h3 className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-              {group.name}
-            </h3>
-            <div className="space-y-1">
-              {group.items.map((item) => {
-                const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    onClick={() => setSidebarOpen(false)}
-                    className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${
-                      isActive
-                        ? "bg-blue-50 text-blue-700 border-r-2 border-blue-600"
-                        : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-                    }`}
-                  >
-                    <item.icon
-                      className={`h-5 w-5 mr-3 ${
-                        isActive ? "text-blue-600" : "text-gray-400"
-                      }`}
-                    />
-                    {item.name}
-                  </Link>
-                );
-              })}
+        {/* Logo/Header */}
+        <div className="flex items-center justify-between h-16 px-6 border-b border-neutral-100">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-brand-500 rounded-lg flex items-center justify-center">
+              <Video className="h-5 w-5 text-white" />
             </div>
+            <h1 className="text-lg font-semibold text-neutral-900">VideoFlow</h1>
           </div>
-        ))}
-      </nav>
+          <button
+            className="lg:hidden p-2 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
 
-      <div className="p-4 border-t border-gray-100">
-        <button
-          onClick={() => signOut({ callbackUrl: "/" })}
-          className="flex items-center w-full px-4 py-3 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-all duration-200"
-        >
-          <LogOut className="h-5 w-5 mr-3 text-gray-400" />
-          Sign Out
-        </button>
+        {/* Navigation */}
+        <nav className="flex-1 px-4 py-6 space-y-8">
+          {navigationGroups.map((group, groupIndex) => (
+            <div key={group.name}>
+              <h3 className="px-3 text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-4">
+                {group.name}
+              </h3>
+              <div className="space-y-1">
+                {group.items.map((item) => {
+                  const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      onClick={() => setSidebarOpen(false)}
+                      className={`${isActive ? 'nav-link-active' : 'nav-link'}`}
+                    >
+                      <item.icon
+                        className={`h-5 w-5 mr-3 ${
+                          isActive ? "text-brand-600" : "text-neutral-400"
+                        }`}
+                      />
+                      {item.name}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        {/* Sign Out */}
+        <div className="p-4 border-t border-neutral-100">
+          <button
+            onClick={() => signOut({ callbackUrl: "/" })}
+            className="nav-link w-full justify-start text-neutral-600 hover:text-red-600 hover:bg-red-50"
+          >
+            <LogOut className="h-5 w-5 mr-3" />
+            Sign Out
+          </button>
+        </div>
       </div>
-    </div>
     </>
   );
 }

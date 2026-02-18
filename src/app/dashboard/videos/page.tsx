@@ -1453,25 +1453,25 @@ export default function VideosPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Videos</h1>
-          <p className="text-gray-600 mt-2">
+          <h1 className="text-3xl font-bold text-neutral-900 tracking-tight">Videos</h1>
+          <p className="text-neutral-600 mt-2">
             Upload, organize, and manage your video content
           </p>
           {selectedTagFilters.length > 0 && (
-            <div className="mt-2">
-              <span className="text-sm text-gray-500 mb-2 block">
+            <div className="mt-4">
+              <span className="text-sm text-neutral-500 mb-3 block font-medium">
                 Filtered by tags ({selectedTagFilters.length}):
               </span>
               <div className="flex flex-wrap gap-2">
                 {selectedTagFilters.map((tag, index) => (
                   <span
                     key={index}
-                    className="px-2 py-1 bg-blue-100 text-blue-800 text-sm rounded flex items-center gap-1"
+                    className="badge-info flex items-center gap-1.5"
                   >
                     {tag}
                     <button
                       onClick={() => setSelectedTagFilters(prev => prev.filter(t => t !== tag))}
-                      className="text-blue-600 hover:text-blue-800"
+                      className="text-blue-600 hover:text-blue-800 transition-colors"
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -1479,7 +1479,7 @@ export default function VideosPage() {
                 ))}
                 <button
                   onClick={() => setSelectedTagFilters([])}
-                  className="px-2 py-1 bg-gray-100 text-gray-600 text-sm rounded hover:bg-gray-200"
+                  className="px-3 py-1.5 bg-neutral-100 text-neutral-600 text-xs font-medium rounded-full hover:bg-neutral-200 transition-colors"
                 >
                   Clear all
                 </button>
@@ -1489,7 +1489,7 @@ export default function VideosPage() {
         </div>
         <Button
           onClick={openUploadModal}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium shadow-sm"
+          className="btn-primary"
         >
           <Upload className="h-5 w-5 mr-2" />
           Upload Video
