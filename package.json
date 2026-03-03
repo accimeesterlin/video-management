@@ -28,7 +28,7 @@
     "mongodb": "^6.0.0",
     "mongoose": "^8.0.0",
     "multer": "^2.0.2",
-    "next": "15.5.2",
+    "next": "15.5.9",
     "next-auth": "^4.24.5",
     "next-i18next": "^15.4.2",
     "nodemailer": "^6.10.1",
